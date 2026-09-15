@@ -191,6 +191,74 @@ func sha256Hex(b []byte) string {
 	return hex.EncodeToString(s[:])
 }
 
+// Compress is the exported, pure in-memory compressor (deflate|gzip|brotli,
+// BestCompression). Same bytes as the disk pipeline — shared core, not a copy.
+func Compress(data []byte, algo string) ([]byte, error) {
+	return compress(data, algo)
+}
+
+// Artifacts is the full in-memory result of a linp job: zero disk writes.
+type Artifacts struct {
+	Disks        []string
+	Root         string
+	ManifestJSON []byte
+	RuleL        []byte
+	Receipt      []byte
+	Compressed   []byte
+	Encoded      string
+	RawLen       int
+}
+
+// RunInMemory executes a plan over raw input bytes, 100% in memory.
+// raw = file content the plan points at (caller loads it however it wants).
+func RunInMemory(plan *Plan, bytecode, source, raw []byte) (*Artifacts, error) {
+	comp, err := compress(raw, plan.Algo)
+	if err != nil {
+		return nil, err
+	}
+	enc := base64.RawURLEncoding.EncodeToString(comp)
+	root := sha256Hex([]byte(enc))
+	total := (len(enc) + plan.Chunk - 1) / plan.Chunk
+	hashes := make([]string, 0, total)
+	disks := make([]string, 0, total)
+	for i := 0; i < total; i++ {
+		end := (i + 1) * plan.Chunk
+		if end > len(enc) {
+			end = len(enc)
+		}
+		chunk := enc[i*plan.Chunk : end]
+		ch := sha256Hex([]byte(chunk))
+		hashes = append(hashes, ch)
+		disks = append(disks, fmt.Sprintf("v2;%s;[%d/%d];%s;%s;%s",
+			plan.Algo, i+1, total, ch, root, chunk))
+	}
+	man := map[string]interface{}{
+		"source_file": plan.File, "algorithm": plan.Algo, "original_bytes": len(raw),
+		"compressed_bytes": len(comp), "encoded_chars": len(enc),
+		"total_disks": total, "root_sha256": root, "disk_hashes": hashes, "format_version": "v2",
+		"job": plan.Job,
+	}
+	mj, _ := json.MarshalIndent(man, "", "  ")
+	var rb bytes.Buffer
+	rb.WriteString("@RULEL:FLOPPY_MANIFEST:2.0.0\n")
+	rb.WriteString("~R{.s=source .a=algo .o=orig_bytes .c=comp_bytes .e=enc_chars .t=total_disks .r=root_sha .f=format}\n")
+	fmt.Fprintf(&rb, ".source=%q\n.algo=%q\n.format=%q\n.orig_bytes=%d\n.comp_bytes=%d\n.enc_chars=%d\n.total_disks=%d\n.root_sha256=%q\n.disk_hashes=[\n",
+		plan.File, plan.Algo, "v2", len(raw), len(comp), len(enc), total, root)
+	for _, h := range hashes {
+		fmt.Fprintf(&rb, "  %q,\n", h)
+	}
+	rb.WriteString("]\n")
+	receipt := map[string]string{
+		"job": plan.Job, "source_sha256": sha256Hex(source),
+		"bytecode_sha256": sha256Hex(bytecode), "root_sha256": root, "algo": plan.Algo,
+	}
+	rj, _ := json.MarshalIndent(receipt, "", "  ")
+	return &Artifacts{
+		Disks: disks, Root: root, ManifestJSON: mj, RuleL: rb.Bytes(),
+		Receipt: rj, Compressed: comp, Encoded: enc, RawLen: len(raw),
+	}, nil
+}
+
 func compress(data []byte, algo string) ([]byte, error) {
 	var buf bytes.Buffer
 	switch algo {
@@ -230,61 +298,28 @@ func compress(data []byte, algo string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Run executes a decoded plan: bytes crus -> compress -> base64url -> v2 disks + manifests + receipt.
+// Run executes a decoded plan from disk files (thin wrapper over RunInMemory).
 // Emite tambem o .linpbc e o receipt que amarra source/bytecode/root (seguranca estilo LIN).
 func Run(plan *Plan, bytecode, source []byte, baseDir, outDir string) (root string, err error) {
 	raw, err := os.ReadFile(filepath.Join(baseDir, plan.File))
 	if err != nil {
 		return "", err
 	}
-	comp, err := compress(raw, plan.Algo)
+	art, err := RunInMemory(plan, bytecode, source, raw)
 	if err != nil {
 		return "", err
 	}
-	enc := base64.RawURLEncoding.EncodeToString(comp)
-	root = sha256Hex([]byte(enc))
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return "", err
 	}
-	total := (len(enc) + plan.Chunk - 1) / plan.Chunk
-	hashes := []string{}
-	for i := 0; i < total; i++ {
-		end := (i + 1) * plan.Chunk
-		if end > len(enc) {
-			end = len(enc)
-		}
-		chunk := enc[i*plan.Chunk : end]
-		ch := sha256Hex([]byte(chunk))
-		hashes = append(hashes, ch)
-		disk := fmt.Sprintf("v2;%s;[%d/%d];%s;%s;%s", plan.Algo, i+1, total, ch, root, chunk)
+	for i, disk := range art.Disks {
 		if err := os.WriteFile(filepath.Join(outDir, fmt.Sprintf("disk_%02d.txt", i+1)), []byte(disk), 0644); err != nil {
 			return "", err
 		}
 	}
-	man := map[string]interface{}{
-		"source_file": plan.File, "algorithm": plan.Algo, "original_bytes": len(raw),
-		"compressed_bytes": len(comp), "encoded_chars": len(enc),
-		"total_disks": total, "root_sha256": root, "disk_hashes": hashes, "format_version": "v2",
-		"job": plan.Job,
-	}
-	mj, _ := json.MarshalIndent(man, "", "  ")
-	_ = os.WriteFile(filepath.Join(outDir, "manifest.json"), mj, 0644)
-	var rb bytes.Buffer
-	rb.WriteString("@RULEL:FLOPPY_MANIFEST:2.0.0\n")
-	rb.WriteString("~R{.s=source .a=algo .o=orig_bytes .c=comp_bytes .e=enc_chars .t=total_disks .r=root_sha .f=format}\n")
-	fmt.Fprintf(&rb, ".source=%q\n.algo=%q\n.format=%q\n.orig_bytes=%d\n.comp_bytes=%d\n.enc_chars=%d\n.total_disks=%d\n.root_sha256=%q\n.disk_hashes=[\n",
-		plan.File, plan.Algo, "v2", len(raw), len(comp), len(enc), total, root)
-	for _, h := range hashes {
-		fmt.Fprintf(&rb, "  %q,\n", h)
-	}
-	rb.WriteString("]\n")
-	_ = os.WriteFile(filepath.Join(outDir, "manifest.rulel"), rb.Bytes(), 0644)
+	_ = os.WriteFile(filepath.Join(outDir, "manifest.json"), art.ManifestJSON, 0644)
+	_ = os.WriteFile(filepath.Join(outDir, "manifest.rulel"), art.RuleL, 0644)
 	_ = os.WriteFile(filepath.Join(outDir, "job.linpbc"), bytecode, 0644)
-	receipt := map[string]string{
-		"job": plan.Job, "source_sha256": sha256Hex(source),
-		"bytecode_sha256": sha256Hex(bytecode), "root_sha256": root, "algo": plan.Algo,
-	}
-	rj, _ := json.MarshalIndent(receipt, "", "  ")
-	_ = os.WriteFile(filepath.Join(outDir, "receipt.json"), rj, 0644)
-	return root, nil
+	_ = os.WriteFile(filepath.Join(outDir, "receipt.json"), art.Receipt, 0644)
+	return art.Root, nil
 }

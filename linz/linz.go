@@ -190,6 +190,42 @@ func Assemble(plan *Plan, payloadB64 string) (disks []string, root string, err e
 	return disks, root, nil
 }
 
+// Manifest is the in-memory manifest pair.
+type Manifest struct {
+	JSON  []byte
+	RuleL []byte
+}
+
+// BuildManifest renders manifest.json + manifest.rulel purely in memory.
+func BuildManifest(plan *Plan, disks []string, root string) *Manifest {
+	hashes := make([]string, 0, len(disks))
+	encChars := 0
+	for _, d := range disks {
+		parts := strings.SplitN(d, ";", 6)
+		if len(parts) != 6 {
+			continue
+		}
+		hashes = append(hashes, parts[3])
+		encChars += len(parts[5])
+	}
+	man := map[string]interface{}{
+		"payload": plan.Payload, "algorithm": plan.Algo, "encoded_chars": encChars,
+		"total_disks": len(disks), "root_sha256": root, "disk_hashes": hashes,
+		"format_version": "v2", "assembler": "linz-P0",
+	}
+	mj, _ := json.MarshalIndent(man, "", "  ")
+	var rb bytes.Buffer
+	rb.WriteString("@RULEL:FLOPPY_MANIFEST:2.0.0\n")
+	rb.WriteString("~R{.s=payload .a=algo .e=enc_chars .t=total_disks .r=root_sha .f=format}\n")
+	fmt.Fprintf(&rb, ".payload=%q\n.algo=%q\n.format=%q\n.enc_chars=%d\n.total_disks=%d\n.root_sha256=%q\n.disk_hashes=[\n",
+		plan.Payload, plan.Algo, "v2", encChars, len(disks), root)
+	for _, h := range hashes {
+		fmt.Fprintf(&rb, "  %q,\n", h)
+	}
+	rb.WriteString("]\n")
+	return &Manifest{JSON: mj, RuleL: rb.Bytes()}
+}
+
 // WriteOut persiste discos + manifest.json + manifest.rulel + .linzbc + receipt.
 func WriteOut(plan *Plan, bytecode, source []byte, disks []string, root, outDir string) error {
 	if err := os.MkdirAll(outDir, 0755); err != nil {
@@ -206,29 +242,9 @@ func WriteOut(plan *Plan, bytecode, source []byte, disks []string, root, outDir 
 			return err
 		}
 	}
-	man := map[string]interface{}{
-		"payload": plan.Payload, "algorithm": plan.Algo, "encoded_chars": 0,
-		"total_disks": len(disks), "root_sha256": root, "disk_hashes": hashes,
-		"format_version": "v2", "assembler": "linz-P0",
-	}
-	if len(disks) > 0 {
-		man["encoded_chars"] = len(strings.SplitN(disks[0], ";", 6)[5])
-		for _, d := range disks[1:] {
-			man["encoded_chars"] = man["encoded_chars"].(int) + len(strings.SplitN(d, ";", 6)[5])
-		}
-	}
-	mj, _ := json.MarshalIndent(man, "", "  ")
-	_ = os.WriteFile(filepath.Join(outDir, "manifest.json"), mj, 0644)
-	var rb bytes.Buffer
-	rb.WriteString("@RULEL:FLOPPY_MANIFEST:2.0.0\n")
-	rb.WriteString("~R{.s=payload .a=algo .e=enc_chars .t=total_disks .r=root_sha .f=format}\n")
-	fmt.Fprintf(&rb, ".payload=%q\n.algo=%q\n.format=%q\n.enc_chars=%d\n.total_disks=%d\n.root_sha256=%q\n.disk_hashes=[\n",
-		plan.Payload, plan.Algo, "v2", man["encoded_chars"], len(disks), root)
-	for _, h := range hashes {
-		fmt.Fprintf(&rb, "  %q,\n", h)
-	}
-	rb.WriteString("]\n")
-	_ = os.WriteFile(filepath.Join(outDir, "manifest.rulel"), rb.Bytes(), 0644)
+	m := BuildManifest(plan, disks, root)
+	_ = os.WriteFile(filepath.Join(outDir, "manifest.json"), m.JSON, 0644)
+	_ = os.WriteFile(filepath.Join(outDir, "manifest.rulel"), m.RuleL, 0644)
 	_ = os.WriteFile(filepath.Join(outDir, "job.linzbc"), bytecode, 0644)
 	receipt := map[string]string{
 		"assembler": "linz-P0", "source_sha256": sha256Hex(source),

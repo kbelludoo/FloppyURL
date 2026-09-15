@@ -1,0 +1,7 @@
+# Binários e caches locais
+base64
+disks/
+disks_*/
+output/
+*.log
+.DS_Store

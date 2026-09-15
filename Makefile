@@ -17,6 +17,7 @@ test:
 	python3 verify_linz_p0.py
 	python3 verify_linz_tc_p0.py
 	python3 verify_mempipe_p0.py
+	python3 verify_vs_original_p0.py
 
 # Compilar o kernel WebAssembly
 build-wasm:

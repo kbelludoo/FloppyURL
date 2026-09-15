@@ -110,15 +110,15 @@ func sha256Hex(data []byte) string {
 }
 
 func main() {
-	inputFile := flag.String("file", "", "Caminho para o arquivo HTML de entrada (obrigatorio)")
-	algo := flag.String("algo", "brotli", "Algoritmo de compressao: brotli (max), deflate (instant zero-wasm), gzip")
+	inputFile := flag.String("file", "", "Caminho para o arquivo HTML ou LIN de entrada (obrigatorio)")
+	algo := flag.String("algo", "deflate", "Algoritmo de compressao: deflate (instant zero-wasm default), brotli (max ratio), gzip")
 	chunkSize := flag.Int("chunk-size", 1800000, "Tamanho maximo por disquete em caracteres (default: 1800000)")
 	outputDir := flag.String("out-dir", "disks", "Diretorio para salvar os disquetes gerados")
 	v1Compat := flag.Bool("v1", false, "Emitir formato legado v1 (sem hashes de integridade)")
 	flag.Parse()
 
 	if *inputFile == "" {
-		log.Fatal("Uso: go run main.go -file <arquivo.html> [-algo brotli|deflate] [-chunk-size 1800000]")
+		log.Fatal("Uso: go run main.go -file <arquivo.html|arquivo.lin> [-algo deflate|brotli] [-chunk-size 1800000]")
 	}
 
 	fmt.Println("==================================================")
@@ -135,13 +135,27 @@ func main() {
 	originalSize := len(rawContent)
 	fmt.Printf("[1/5] Arquivo lido: %s (%d bytes)\n", *inputFile, originalSize)
 
-	var minifiedBuf bytes.Buffer
-	if err := m.Minify("text/html", &minifiedBuf, bytes.NewReader(rawContent)); err != nil {
-		log.Printf("Aviso na minificacao: %v. Prosseguindo com conteudo original.\n", err)
-		minifiedBuf.Reset()
-		minifiedBuf.Write(rawContent)
+	var payloadBytes []byte
+	ext := filepath.Ext(*inputFile)
+	if ext == ".lin" || ext == ".linbc1" {
+		fmt.Printf("    -> Detectado arquivo LIN deterministico (%s)\n", ext)
+		linWrapper := map[string]interface{}{
+			"type":     "lin",
+			"filename": filepath.Base(*inputFile),
+			"source":   string(rawContent),
+		}
+		wrapperJSON, _ := json.Marshal(linWrapper)
+		payloadBytes = wrapperJSON
+	} else {
+		var minifiedBuf bytes.Buffer
+		if err := m.Minify("text/html", &minifiedBuf, bytes.NewReader(rawContent)); err != nil {
+			log.Printf("Aviso na minificacao: %v. Prosseguindo com conteudo original.\n", err)
+			minifiedBuf.Reset()
+			minifiedBuf.Write(rawContent)
+		}
+		payloadBytes = minifiedBuf.Bytes()
 	}
-	minifiedBytes := minifiedBuf.Bytes()
+	minifiedBytes := payloadBytes
 	reduction := 0.0
 	if originalSize > 0 {
 		reduction = 100.0 * (1.0 - float64(len(minifiedBytes))/float64(originalSize))
@@ -232,6 +246,26 @@ func main() {
 	manifestJSON, _ := json.MarshalIndent(manifest, "", "  ")
 	_ = os.WriteFile(filepath.Join(*outputDir, "manifest.json"), manifestJSON, 0644)
 	_ = os.WriteFile("base64", []byte(firstDiskContent), 0644)
+
+	// Emitir Manifesto Canonico em RuleL (padrao LIN)
+	var rulelBuf bytes.Buffer
+	rulelBuf.WriteString("@RULEL:FLOPPY_MANIFEST:2.0.0\n")
+	rulelBuf.WriteString("~R{.s=source .a=algo .o=orig_bytes .m=min_bytes .c=comp_bytes .e=enc_chars .t=total_disks .r=root_sha .f=format}\n")
+	rulelBuf.WriteString(fmt.Sprintf(".source=\"%s\"\n", manifest.SourceFile))
+	rulelBuf.WriteString(fmt.Sprintf(".algo=\"%s\"\n", manifest.Algorithm))
+	rulelBuf.WriteString(fmt.Sprintf(".format=\"%s\"\n", manifest.FormatVersion))
+	rulelBuf.WriteString(fmt.Sprintf(".orig_bytes=%d\n", manifest.OriginalBytes))
+	rulelBuf.WriteString(fmt.Sprintf(".min_bytes=%d\n", manifest.MinifiedBytes))
+	rulelBuf.WriteString(fmt.Sprintf(".comp_bytes=%d\n", manifest.CompressedBytes))
+	rulelBuf.WriteString(fmt.Sprintf(".enc_chars=%d\n", manifest.EncodedChars))
+	rulelBuf.WriteString(fmt.Sprintf(".total_disks=%d\n", manifest.TotalDisks))
+	rulelBuf.WriteString(fmt.Sprintf(".root_sha256=\"%s\"\n", manifest.RootSHA256))
+	rulelBuf.WriteString(".disk_hashes=[\n")
+	for _, h := range manifest.DiskHashes {
+		rulelBuf.WriteString(fmt.Sprintf("  \"%s\",\n", h))
+	}
+	rulelBuf.WriteString("]\n")
+	_ = os.WriteFile(filepath.Join(*outputDir, "manifest.rulel"), rulelBuf.Bytes(), 0644)
 
 	fmt.Println("--------------------------------------------------")
 	fmt.Printf("CONCLUIDO COM SUCESSO!\n")

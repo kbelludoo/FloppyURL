@@ -1,8 +1,13 @@
 # FloppyURL v2.0 - Makefile
 
-.PHONY: all build-wasm demo-brotli demo-deflate demo-raid serve clean
+.PHONY: all build-wasm demo-brotli demo-deflate demo-defi demo-lin demo-raid test serve clean
 
-all: build-wasm demo-brotli
+all: test demo-deflate
+
+# Executar bateria completa de testes de integridade e atestação
+test:
+	@echo "==> Executando suite de testes de integridade..."
+	python3 test_floppy.py
 
 # Compilar o kernel WebAssembly
 build-wasm:
@@ -20,6 +25,16 @@ demo-deflate:
 	@echo "==> Gerando payload Deflate (Zero-WASM)..."
 	go run main.go -file examples/demo.html -algo deflate -out-dir disks_deflate
 
+# Gerar dApp DeFi Swap Unstoppable
+demo-defi:
+	@echo "==> Gerando payload DeFi AMM Swapper..."
+	go run main.go -file examples/defi_swap_lin.html -algo deflate -out-dir disks_defi
+
+# Gerar Kernel LIN determinístico com atestação RuleL
+demo-lin:
+	@echo "==> Gerando payload LIN Determinístico..."
+	go run main.go -file examples/cpmm_oracle.lin -algo deflate -out-dir disks_lin
+
 # Gerar simulação RAID-0 multi-disco (chunks pequenos)
 demo-raid:
 	@echo "==> Gerando payload RAID-0 particionado..."
@@ -31,4 +46,4 @@ serve:
 	cd Website && python3 -m http.server 8080
 
 clean:
-	rm -rf disks disks_brotli disks_deflate disks_multidisk base64
+	rm -rf disks disks_brotli disks_deflate disks_defi disks_lin disks_multidisk test_run_disks base64

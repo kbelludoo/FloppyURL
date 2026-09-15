@@ -1,0 +1,13 @@
+@LAY:1.0
+VIEW floppyurl
+STYLE bg=#030804 fg=#00ff66 font=monospace pad=24 h=100vh
+    H1 "FLOPPYURL v3.0 - LAY DSL NATIVE UI"
+    P "This entire interface was generated from .lay bytecode." CLASS body
+    P "LAY is a deterministic declarative UI DSL in the LIN family." CLASS body
+    COL
+        INPUT id=lay-input-1 placeholder="COLE O PAYLOAD AQUI" ACTION=mount
+        BUTTON "MONTAR DISCO" ACTION=mount
+        BUTTON "REINICIAR" ACTION=clear
+    END
+    P "package .lay: go run main.go -file app.lay -algo deflate" CLASS body
+END

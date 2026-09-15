@@ -59,7 +59,7 @@ def run_test(name, fn):
 
 def test_deflate_html():
     cleanup()
-    cmd = ["go", "run", "main.go", "-file", "examples/demo.html", "-algo", "deflate", "-out-dir", TEST_DIR]
+    cmd = ["go", "run", "main.go", "lay_compiler.go", "-file", "examples/demo.html", "-algo", "deflate", "-out-dir", TEST_DIR]
     res = subprocess.run(cmd, capture_output=True, text=True)
     assert res.returncode == 0, f"Process failed: {res.stderr}"
 
@@ -94,7 +94,7 @@ def test_deflate_html():
 def test_multidisk_raid0():
     cleanup()
     # Chunk size small to force multi-disk
-    cmd = ["go", "run", "main.go", "-file", "examples/defi_swap_lin.html", "-algo", "deflate", "-chunk-size", "800", "-out-dir", TEST_DIR]
+    cmd = ["go", "run", "main.go", "lay_compiler.go", "-file", "examples/defi_swap_lin.html", "-algo", "deflate", "-chunk-size", "800", "-out-dir", TEST_DIR]
     res = subprocess.run(cmd, capture_output=True, text=True)
     assert res.returncode == 0, f"Process failed: {res.stderr}"
 
@@ -125,7 +125,7 @@ def test_multidisk_raid0():
 
 def test_lin_payload_packaging():
     cleanup()
-    cmd = ["go", "run", "main.go", "-file", "examples/cpmm_oracle.lin", "-algo", "deflate", "-out-dir", TEST_DIR]
+    cmd = ["go", "run", "main.go", "lay_compiler.go", "-file", "examples/cpmm_oracle.lin", "-algo", "deflate", "-out-dir", TEST_DIR]
     res = subprocess.run(cmd, capture_output=True, text=True)
     assert res.returncode == 0, f"Process failed: {res.stderr}"
 
@@ -141,6 +141,55 @@ def test_lin_payload_packaging():
     assert payload_obj["filename"] == "cpmm_oracle.lin"
     assert "@CPMM_ORACLE" in payload_obj["source"]
 
+def test_lay_dsl_compilation():
+    cleanup()
+    lay_src = "@LAY:1.0\nVIEW app\nSTYLE bg=#000 fg=#0f0\nH1 \"Hello LAY\"\nP \"Bytecode test\" CLASS body\nEND\n"
+    lay_path = os.path.join(TEST_DIR, "test_app.lay")
+    os.makedirs(os.path.dirname(lay_path), exist_ok=True)
+    with open(lay_path, "w") as f:
+        f.write(lay_src)
+
+    cmd = ["go", "run", "main.go", "lay_compiler.go", "-file", lay_path, "-algo", "deflate", "-out-dir", TEST_DIR]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    assert res.returncode == 0, f"Process failed: {res.stderr}"
+
+    disk1_path = os.path.join(TEST_DIR, "disk_01.txt")
+    assert os.path.exists(disk1_path), "disk_01.txt missing"
+
+    with open(disk1_path, "r") as f:
+        parsed = parse_v2_payload(f.read())
+
+    comp_bytes = decode_raw_url_base64(parsed["payload"])
+    decompressed_str = zlib.decompress(comp_bytes, -15).decode('utf-8')
+    payload_obj = json.loads(decompressed_str)
+
+    assert payload_obj["type"] == "lay"
+    assert payload_obj["filename"] == "test_app.lay"
+
+    # Decode the bytecode and verify magic
+    bc = decode_raw_url_base64(payload_obj["bytecode"])
+    assert bc[:4] == b'LAY1', f"Bad magic: {bc[:4]}"
+    assert bc[4] == 1, f"Bad version: {bc[4]}"
+
+    # Verify node count and structure
+    import struct
+    root = struct.unpack('<H', bc[5:7])[0]
+    nodes = struct.unpack('<H', bc[7:9])[0]
+    strings = struct.unpack('<H', bc[9:11])[0]
+    assert root == 0, f"Root should be 0, got {root}"
+    assert nodes >= 3, f"Should have at least 3 nodes (VIEW+H1+P), got {nodes}"
+    assert strings >= 3, f"Should have at least 3 strings, got {strings}"
+
+    # Determinism: recompile and check same bytecode
+    res2 = subprocess.run(cmd, capture_output=True, text=True)
+    assert res2.returncode == 0
+    with open(disk1_path, "r") as f:
+        parsed2 = parse_v2_payload(f.read())
+    comp2 = decode_raw_url_base64(parsed2["payload"])
+    decomp2 = zlib.decompress(comp2, -15).decode('utf-8')
+    obj2 = json.loads(decomp2)
+    assert obj2["bytecode"] == payload_obj["bytecode"], "LAY compilation not deterministic"
+
 def main():
     print("==================================================")
     print(" FloppyURL v2.0 Integration & Attestation Test Suite")
@@ -150,6 +199,7 @@ def main():
         ("Deflate HTML Packaging & Decompression", test_deflate_html),
         ("Multi-Disk RAID-0 Partitioning & Reassembly", test_multidisk_raid0),
         ("Deterministic LIN Script Packaging & RuleL Manifest", test_lin_payload_packaging),
+        ("LAY DSL Compilation & Bytecode Roundtrip", test_lay_dsl_compilation),
     ]
 
     passed = 0

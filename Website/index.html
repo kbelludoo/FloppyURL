@@ -137,6 +137,7 @@
 	</div>
 
 	<script src="wasm_exec.js"></script>
+	<script src="lay_runtime.js"></script>
 
 	<script>
 		'use strict';
@@ -401,12 +402,16 @@
 					printLog("> DESCOMPRESSÃO BROTLI WASM CONCLUÍDA.", "sucesso");
 				}
 
-				// Verifica se é payload determinístico LIN
+				// Verifica se é payload determinístico LIN ou LAY
 				if (htmlPuro.trim().startsWith('{')) {
 					try {
 						const parsed = JSON.parse(htmlPuro);
 						if (parsed.type === 'lin' || parsed.type === 'dispute') {
 							renderLinPayload(parsed);
+							return;
+						}
+						if (parsed.type === 'lay') {
+							LAYToFloppy(parsed);
 							return;
 						}
 					} catch(e) {}

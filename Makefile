@@ -1,13 +1,20 @@
 # FloppyURL v2.0 - Makefile
 
-.PHONY: all build-wasm demo-brotli demo-deflate demo-defi demo-lin demo-raid test serve clean
+.PHONY: all build-wasm demo-brotli demo-deflate demo-defi demo-lin demo-lay demo-raid test serve clean
 
 all: test demo-deflate
 
-# Executar bateria completa de testes de integridade e atestação
+# Executar bateria completa de testes de integridade e atestação (irmãs P0)
 test:
-	@echo "==> Executando suite de testes de integridade..."
+	@echo "==> Suite legada + oracles externos das irmãs..."
 	python3 test_floppy.py
+	python3 verify_lint_p0.py
+	python3 verify_lint_transpile_p0.py
+	python3 verify_linp_p0.py
+	python3 verify_linp_tc_p0.py
+	python3 verify_linj_p0.py
+	python3 verify_linj_tc_p0.py
+	python3 verify_linz_p0.py
 
 # Compilar o kernel WebAssembly
 build-wasm:
@@ -18,27 +25,32 @@ build-wasm:
 # Gerar exemplo com compressão Brotli (máxima compressão)
 demo-brotli:
 	@echo "==> Gerando payload Brotli..."
-	go run main.go -file examples/demo.html -algo brotli -out-dir disks_brotli
+	go run main.go lay_compiler.go -file examples/demo.html -algo brotli -out-dir disks_brotli
 
 # Gerar exemplo com Deflate (boot instantâneo zero-WASM via DecompressionStream)
 demo-deflate:
 	@echo "==> Gerando payload Deflate (Zero-WASM)..."
-	go run main.go -file examples/demo.html -algo deflate -out-dir disks_deflate
+	go run main.go lay_compiler.go -file examples/demo.html -algo deflate -out-dir disks_deflate
 
 # Gerar dApp DeFi Swap Unstoppable
 demo-defi:
 	@echo "==> Gerando payload DeFi AMM Swapper..."
-	go run main.go -file examples/defi_swap_lin.html -algo deflate -out-dir disks_defi
+	go run main.go lay_compiler.go -file examples/defi_swap_lin.html -algo deflate -out-dir disks_defi
 
 # Gerar Kernel LIN determinístico com atestação RuleL
 demo-lin:
 	@echo "==> Gerando payload LIN Determinístico..."
-	go run main.go -file examples/cpmm_oracle.lin -algo deflate -out-dir disks_lin
+	go run main.go lay_compiler.go -file examples/cpmm_oracle.lin -algo deflate -out-dir disks_lin
+
+# Gerar UI LAY DSL (bytecode declarativo nativo)
+demo-lay:
+	@echo "==> Gerando payload LAY DSL (Bytecode UI)..."
+	go run main.go lay_compiler.go -file examples/floppyurl_lay.lay -algo deflate -out-dir disks_lay
 
 # Gerar simulação RAID-0 multi-disco (chunks pequenos)
 demo-raid:
 	@echo "==> Gerando payload RAID-0 particionado..."
-	go run main.go -file examples/demo.html -algo deflate -chunk-size 400 -out-dir disks_multidisk
+	go run main.go lay_compiler.go -file examples/demo.html -algo deflate -chunk-size 400 -out-dir disks_multidisk
 
 # Iniciar servidor local para testes
 serve:

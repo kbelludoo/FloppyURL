@@ -146,6 +146,30 @@ func main() {
 		}
 		wrapperJSON, _ := json.Marshal(linWrapper)
 		payloadBytes = wrapperJSON
+	} else if ext == ".lay" || ext == ".laybc" {
+		fmt.Printf("    -> Detectado arquivo LAY declarativo (%s)\n", ext)
+
+		var layBytecode []byte
+		if ext == ".lay" {
+			compiled, err := CompileLAY(rawContent)
+			if err != nil {
+				log.Fatalf("Erro na compilacao LAY: %v\n", err)
+			}
+			layBytecode = compiled
+			fmt.Printf("    -> Compilacao LAY: %d bytes source -> %d bytes bytecode (reducao: %.1f%%)\n",
+				len(rawContent), len(layBytecode),
+				100.0*(1.0-float64(len(layBytecode))/float64(len(rawContent))))
+		} else {
+			layBytecode = rawContent
+		}
+
+		layWrapper := map[string]interface{}{
+			"type":     "lay",
+			"filename": filepath.Base(*inputFile),
+			"bytecode": base64.RawURLEncoding.EncodeToString(layBytecode),
+		}
+		wrapperJSON, _ := json.Marshal(layWrapper)
+		payloadBytes = wrapperJSON
 	} else {
 		var minifiedBuf bytes.Buffer
 		if err := m.Minify("text/html", &minifiedBuf, bytes.NewReader(rawContent)); err != nil {

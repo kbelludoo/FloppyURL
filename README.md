@@ -1,109 +1,150 @@
-# FloppyURL - Zero-Byte Hosting System via URL Hash & WebAssembly
+# FloppyURL - Zero-Byte Attested Web Packager via URL Hash
 
-**FloppyURL** is a client-side, zero-byte web hosting system and bootloader inspired by brutalist terminal aesthetics and retro computing. It allows you to encode an entire web application (HTML, CSS, JS, SVG, etc.) into heavily compressed Base64 chunks embedded directly in URL hashes (`#`). 
+**FloppyURL** é um sistema client-side de hospedagem zero-byte: ele comprime um
+web app inteiro (HTML/CSS/JS/SVG), o fatia em "disquetes" Base64URL atestados
+por SHA-256 e o distribui dentro de fragments de URL (`#`) — sem servidor
+hospedando os arquivos do site.
 
-When loaded, a custom **Go-based WebAssembly (WASM) kernel** decompresses the payload inside the browser and dynamically boots the application inside an isolated DOM iframe—without a backend server hosting the site files!
+No boot, um **bootloader** com estética de terminal CRT verifica a integridade
+criptográfica de cada disco e do conjunto completo, decripta (opcional,
+AES-256-GCM) e descomprime o payload — via **`DecompressionStream` nativo**
+(deflate/gzip, zero-WASM) ou **Brotli** (~200 KB dedicado, com fallback ao
+kernel WASM em Go) — e injeta o site num `<iframe sandboxed>`.
 
----
-
-## ✨ Features
-
-- **Zero-Byte Server Hosting:** The server only hosts the bootloader (`index.html`, `wasm_exec.js`, and `wasm.wasm`). The actual website lives entirely inside the URL hash or user-provided "floppy disks".
-- **Multi-Disk RAID-0 Emulation:** Payloads exceeding typical browser URL limits (~1.8MB chunks) are automatically split into sequentially numbered "floppy disk" volumes (`v1;[1/2]`, `v1;[2/2]`, etc.). The terminal prompts the user to insert missing disks sequentially.
-- **Go + Brotli Kernel:** Utilizes `andybalholm/brotli` at maximum compression level combined with `tdewolff/minify` to shrink web assets to their absolute minimum size before encoding.
-- **WASM Client-Side Execution:** The browser loads the compressed Base64 string and calls the compiled Go WebAssembly kernel (`window.decoder`) to decompress and inject the payload safely.
-- **Retro Terminal Interface:** Brutalist CRT/Terminal UI featuring green-on-black typography, dynamic disk prompt alerts, and bootloader status logs.
-
----
-
-## 🏗️ Architecture & How It Works
-
-1. **Minification & Compression (`main.go`):**
-   - Takes any input HTML file (with embedded CSS/JS) and strips unnecessary whitespace/tokens using `tdewolff/minify`.
-   - Compresses the minified payload using **Brotli** (`BestCompression`).
-   - Encodes the binary stream into **Base64 RawURL** format.
-   - Automatically chunks the output into **1.8MB segments** prefixed with signature headers (e.g., `v1;[1/2]`, `v1;[2/2]`) and outputs to a `base64` file.
-
-2. **The WASM Kernel (`descompressor.go`):**
-   - Compiles to a lightweight WebAssembly binary using **TinyGo** / standard Go WASM toolchain.
-   - Exposes a global Javascript function `window.decoder(base64Str)` that decodes and decompresses the Brotli stream back into raw HTML.
-
-3. **The Bootloader (`index.html`):**
-   - Initializes the WASM runtime (`Go()`) and loads `wasm.wasm`.
-   - Checks `window.location.hash` on startup. If a valid payload is found, it immediately boots.
-   - If a multi-part volume is missing disks, it drops into an interactive CLI prompt (`> INSIRA O DISCO X:`) allowing the user to paste remaining parts.
-   - Once all parts are combined, it injects the rendered HTML into a full-screen `<iframe>`.
+Inspirado no projeto original [Xelckis/FloppyURL](https://github.com/Xelckis/FloppyURL).
 
 ---
 
-## 🚀 Getting Started
+## ✨ Destaques (v2.1)
 
-### Prerequisites
-- [Go](https://golang.org/dl/) (1.21+ recommended) or [TinyGo](https://tinygo.org/) for optimized `.wasm` builds.
-- A basic static web server (or Python's `http.server`) to serve the bootloader locally.
+- **Atestação criptográfica de ponta a ponta:** SHA-256 de cada disco **e**
+  raiz do conjunto completo, calculados no empacotador (Go) e verificados no
+  browser (WebCrypto) antes de qualquer execução.
+- **Criptografia opcional:** `-pass` empacota com AES-256-GCM
+  (chave derivada por PBKDF2-HMAC-SHA256, 200.000 iterações, WebCrypto no
+  cliente). Sem a senha, o payload é indecifrável.
+- **Boot híbrido:** `deflate`/`gzip` usam `DecompressionStream` nativo
+  (instantâneo, zero-WASM); Brotli usa decodificador dedicado de ~200 KB
+  ([brotli-dec-wasm](https://github.com/torao/brotli-dec-wasm), vendorizado)
+  com fallback para o kernel WASM Go.
+- **RAID-0 de disquetes:** payloads acima de `-chunk-size` (padrão ~1,8 MB)
+  são fatiados em volumes `v2;algo;[i/n];sha_disco;sha_raiz;payload`.
+  O terminal pede os discos faltantes em ordem, ou você arrasta todos de uma vez.
+- **Bundler single-file:** `<link>`, `<script src>` e `<img src>` locais são
+  inlinados automaticamente antes da minificação (`-no-inline` para desligar).
+- **Isolamento real:** o site hóspede roda em `<iframe sandbox>` **sem**
+  `allow-same-origin` (origem opaca — sem acesso ao bootloader, ao hash ou ao
+  storage do host).
+- **Retrocompatível:** lê discos `v1;[i/n]` do projeto original.
 
-### 1. Build the WASM Decompressor Kernel
-Compile `descompressor.go` to WebAssembly and place it in the website directory:
+## 📀 Formatos de disco
 
-```bash
-# Using standard Go compiler:
-GOOS=js GOARCH=wasm go build -o Website/wasm.wasm descompressor.go
+| Formato | Estrutura | Integridade | Criptografia |
+|---|---|---|---|
+| `v2` | `v2;<algo>;[i/n];<sha256_disco>;<sha256_raiz>;<payload>` | ✅ por disco + raiz | — |
+| `v2e` | idem ao `v2`, payload = `salt‖iv‖AES-GCM(ct)` em Base64URL | ✅ por disco + raiz | ✅ AES-256-GCM |
+| `v1` | `v1;[i/n]<payload>` (legado) | ❌ | — |
+| bruto | `<payload>` (disco único v1-era) | ❌ | — |
 
-# (Optional) If using standard Go, ensure you have the correct wasm_exec.js:
-cp "$(go env GOROOT)/misc/wasm/wasm_exec.js" Website/
-
-```
-
-### 2. Compress Your Website / Payload
-
-Run the compressor CLI tool against your target HTML file:
-
-```bash
-go run main.go -file my_website.html
-
-```
-
-*This will generate a `base64` file containing your chunked payload strings.*
-
-### 3. Run the Bootloader
-
-Serve the `Website/` folder locally (WASM requires HTTP/HTTPS to load via `fetch`):
-
-```bash
-cd Website
-python3 -m http.server 8080
-
-```
-
-Open your browser at `http://localhost:8080`.
-
-* **Single-Disk Boot:** Append `#<your-base64-string>` directly to the URL.
-* **Multi-Disk Boot:** Paste each `v1;[x/y]...` chunk directly into the terminal prompt when requested.
+`<algo>` ∈ `brotli` | `deflate` | `gzip` · `<payload>` = Base64URL (sem padding)
 
 ---
 
-## 📦 Repository Structure
+## 🏗️ Arquitetura
 
 ```text
-├── main.go               # CLI tool: HTML minifier, Brotli compressor, & RAID chunker
-├── descompressor.go      # Go WASM Kernel: Exposes window.decoder to JS
-├── go.mod / go.sum       # Go module dependencies
-└── Website/
-    ├── index.html        # Brutalist terminal bootloader & RAID-0 disk manager
-    ├── wasm_exec.js      # Go/TinyGo WebAssembly JavaScript runtime bridge
-    └── wasm.wasm         # Compiled WebAssembly decompressor kernel
-
+├── main.go                    # CLI do empacotador (fina; lógica em internal/)
+├── internal/floppy/           # Pipeline: inlining → minify → compress → (AES-GCM)
+│   │                          #          → Base64URL → chunking → atestação SHA-256
+│   └── floppy_test.go         # Testes: roundtrip, PBKDF2 (vetor RFC), chunking, inlining
+├── cmd/wasmdecoder/main.go    # Kernel WASM Go: window.decoder(b64Brotli) [fallback]
+├── scripts/e2e.mjs            # E2E headless (Node): simula o bootloader inteiro
+├── Website/
+│   ├── index.html             # Bootloader terminal CRT (v2.1)
+│   ├── wasm_exec.js           # Runtime Go WASM (regenerado no build)
+│   ├── wasm.wasm              # (gerado) `make build-wasm` / CI — fora do Git
+│   └── vendor/brotli/         # brotli-dec-wasm 2.3.2 + CHECKSUMS.txt
+├── examples/demo.html         # Site de demonstração
+├── .github/workflows/
+│   ├── ci.yml                 # gofmt, vet, test, build WASM, E2E (positivo+negative)
+│   └── deploy-pages.yml       # Deploy do bootloader no GitHub Pages
+└── Makefile
 ```
 
+## 🚀 Como usar
+
+### Empacotar um site
+
+```bash
+# Brotli (máxima compressão) com atestação
+go run . -file meu_site.html
+
+# Boot instantâneo (zero-WASM) via DecompressionStream
+go run . -file meu_site.html -algo deflate
+
+# Criptografado com senha
+go run . -file meu_site.html -algo brotli -pass "minha senha"
+
+# Multi-disco (chunks de 400 chars, p/ testar o fluxo RAID-0)
+go run . -file meu_site.html -algo deflate -chunk-size 400 -out-dir disks_multidisk
+
+# Legado v1 (sem hashes)
+go run . -file meu_site.html -v1
+```
+
+Flags: `-file` (obrigatória), `-algo`, `-chunk-size`, `-out-dir`, `-pass`,
+`-v1`, `-no-inline`, `-version`.
+Saída em `<out-dir>/`: `disk_NN.txt`, `manifest.json` (+ `boot_url.txt` em disco único).
+
+### Dar boot
+
+Sirva a pasta `Website/` via HTTP e:
+
+- **Disco único:** abra `http://localhost:8080/#<payload>` (veja `boot_url.txt`);
+- **Multi-disco:** abra o bootloader e insira/arraste os `disk_NN.txt` na ordem
+  (o terminal pede o disco faltante; `manifest.json` pode ser arrastado junto);
+- **Criptografado:** o terminal pede a senha (`v2e`).
+
+```bash
+make build-wasm   # gera Website/wasm.wasm (obrigatório p/ payloads brotli)
+make serve        # python3 -m http.server 8080 em Website/
+```
+
+### Desenvolvimento
+
+```bash
+make test         # go vet + go test + E2E headless completo
+make demos        # gera payloads de todos os cenários em disks_e2e/
+make clean
+```
+
+O E2E (`scripts/e2e.mjs`) roda o mesmo fluxo do bootloader em Node: parsing,
+SHA-256 por disco, atestação raiz, PBKDF2+AES-GCM (WebCrypto) e descompressão
+nativa/vendorizada, validando o resultado contra `manifest.minified_sha256`.
+
 ---
 
-## ⚠️ Known Limitations
+## 🔒 Modelo de segurança
 
-* **URL Length Limits:** While modern browsers handle large fragments, sharing 2MB+ URLs over standard messaging platforms may truncate the link. The RAID-0 multi-disk prompt mitigates this by allowing manual pasting.
-* **Single-File Scope:** The input HTML should preferably have CSS and JavaScript inlined for a seamless single-payload deployment.
+- **Integridade:** impossível trocar/corromper um disco sem quebrar o SHA-256
+  do disco ou a raiz do conjunto (verificado antes do boot).
+- **Confidencialidade (opcional):** AES-256-GCM + PBKDF2-SHA256 (200k iterações).
+  O `manifest.json` registra apenas metadados — nunca a senha.
+- **Execução isolada:** iframe `sandbox="allow-scripts allow-forms allow-popups"`
+  **sem** `allow-same-origin` — o site hóspede não acessa o bootloader, o hash
+  da URL nem o `localStorage` do host. Trade-off: apps hóspedes que usam
+  `localStorage`/`document.cookie` próprios não terão persistência.
+- **Cadeia de suprimento:** o decoder Brotli vendorizado é pinado por SHA-256
+  (`Website/vendor/brotli/CHECKSUMS.txt`, verificado no CI).
 
----
+## ⚠️ Limitações conhecidas
 
-## 📄 License
+- URLs de 2 MB+ podem ser truncadas por apps de mensagem — use multi-disco.
+- ES modules (`<script type="module" src=...>`) não são inlinados.
+- A criptografia `v2e` não é suportada no formato legado `-v1`.
 
-This project is licensed under the **Apache License 2.0** 
+## 📄 Licença
+
+Apache-2.0. O decoder vendorizado é dual MIT/Apache-2.0 (ver
+`Website/vendor/brotli/LICENSE-*.txt`). Créditos ao projeto original
+[Xelckis/FloppyURL](https://github.com/Xelckis/FloppyURL).

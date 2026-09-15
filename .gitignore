@@ -5,3 +5,9 @@ disks_*/
 output/
 *.log
 .DS_Store
+
+# Binário WASM compilado — gerado por `make build-wasm` e pelo CI/Pages
+Website/wasm.wasm
+
+# Node
+node_modules/

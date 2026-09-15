@@ -4,7 +4,7 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>FloppyURL v2.0 - Zero-Byte Attested Bootloader</title>
+	<title>FloppyURL v2.1 - Zero-Byte Attested Bootloader</title>
 	<style>
 		/* Estética Brutalista / Terminal CRT */
 		body {
@@ -113,7 +113,7 @@
 </head>
 
 <body>
-	<div id="drop-zone">> SOLTE O DISQUETE (.TXT) AQUI PARA CARREGAR <</div>
+	<div id="drop-zone">> SOLTE OS DISQUETES (.TXT) AQUI PARA CARREGAR <</div>
 
 	<pre>
   _____ _                            _   _ ____  _     
@@ -123,8 +123,8 @@
  |_|   |_|\___/| .__/| .__/ \__, |   \___/|_| \_\_____|
                |_|   |_|    |___/                      
  =======================================================
-  v2.0 - DETERMINISTIC ATTESTED ZERO-BYTE BOOTLOADER
-  [WebCrypto SHA-256 Checksums | Native Decompress | WASM]
+  v2.1 - ATTESTED ZERO-BYTE BOOTLOADER
+  [SHA-256 Root Attestation | AES-256-GCM | Native DecompressionStream | Brotli ~200KB]
  =======================================================
 	</pre>
 
@@ -137,15 +137,24 @@
 	</div>
 
 	<script src="wasm_exec.js"></script>
-
 	<script>
 		'use strict';
 
-		let discos = [];
+		// -------------------------------------------------------------
+		// ESTADO GLOBAL
+		// -------------------------------------------------------------
+		let discos = [];               // payloads Base64 por índice
 		let totalDiscos = 0;
-		let algoritmo = "brotli";
-		let rootSha256Esperado = null;
+		let algoritmo = "brotli";      // brotli | deflate | gzip
+		let formato = null;            // 'v2' | 'v2e' | 'v1' | 'raw'
+		let rootSha256Esperado = null; // atestação raiz do conjunto completo
+		let esperandoSenha = false;
+		let tentativasSenha = 0;
+		let iteracoesPBKDF2 = 200000;  // ajustado pelo manifest, se presente
 		let wasmPronto = false;
+		let brotliDecoderFn = null;    // decodificador dedicado (~200KB)
+
+		const MAX_TENTATIVAS_SENHA = 5;
 
 		const terminal = document.getElementById('console-output');
 		const inputContainer = document.getElementById('input-container');
@@ -161,16 +170,21 @@
 			window.scrollTo(0, document.body.scrollHeight);
 		}
 
-		// --- CÁLCULO DE SHA-256 NATIVO VIA WEBCRYPTO (INSPIRADO NO LIN) ---
-		async function calcSha256(str) {
-			const encoder = new TextEncoder();
-			const data = encoder.encode(str);
-			const digest = await crypto.subtle.digest('SHA-256', data);
-			const hashArray = Array.from(new Uint8Array(digest));
-			return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+		function promptReboot() {
+			inputContainer.style.display = 'block';
+			prompt.innerText = `> DIGITE 'reboot' PARA RECOMEÇAR: `;
+			inputCampo.focus();
 		}
 
-		// --- DESCOMPRESSOR NATIVO VIA DECOMPRESSIONSTREAM (ZERO-WASM) ---
+		// -------------------------------------------------------------
+		// PRIMITIVAS CRIPTOGRÁFICAS (WebCrypto)
+		// -------------------------------------------------------------
+		async function calcSha256(str) {
+			const data = new TextEncoder().encode(str);
+			const digest = await crypto.subtle.digest('SHA-256', data);
+			return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+		}
+
 		function base64UrlToUint8Array(base64Url) {
 			let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
 			while (base64.length % 4) base64 += '=';
@@ -180,27 +194,60 @@
 			return bytes;
 		}
 
+		function bytesToBase64Url(bytes) {
+			let bin = '';
+			const CH = 0x8000;
+			for (let i = 0; i < bytes.length; i += CH) {
+				bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+			}
+			return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+		}
+
+		// Descompressão nativa instantânea (zero-WASM): deflate-raw e gzip.
 		async function decompressNative(compressedBytes, format) {
 			const ds = new DecompressionStream(format);
 			const writer = ds.writable.getWriter();
 			writer.write(compressedBytes);
 			writer.close();
-			const response = new Response(ds.readable);
-			return await response.text();
+			return await new Response(ds.readable).text();
 		}
 
-		// --- CARREGAMENTO DO KERNEL WASM (SE NECESSÁRIO) ---
+		// -------------------------------------------------------------
+		// DECODIFICADOR BROTLI: dedicado (~200KB) com fallback ao kernel Go
+		// -------------------------------------------------------------
+		async function getBrotliDecoder() {
+			if (brotliDecoderFn) return brotliDecoderFn;
+			try {
+				const loader = await import('./vendor/brotli-loader.mjs');
+				brotliDecoderFn = await loader.loadBrotliDecoder();
+				printLog("> DECODIFICADOR BROTLI DEDICADO OPERACIONAL (~200KB).", "sucesso");
+			} catch (e) {
+				printLog("> DECODIFICADOR DEDICADO INDISPONÍVEL (" + (e.message || e) + "). USAREI O KERNEL GO.", "alerta");
+			}
+			return brotliDecoderFn;
+		}
+
+		// -------------------------------------------------------------
+		// KERNEL WASM GO (fallback sob demanda)
+		// -------------------------------------------------------------
 		async function bootWasm() {
 			if (wasmPronto) return true;
-			printLog("> CARREGANDO KERNEL WASM...");
+			printLog("> CARREGANDO KERNEL WASM GO...");
 			try {
 				const go = new Go();
-				const result = await WebAssembly.instantiateStreaming(
-					fetch("wasm.wasm?v=" + Date.now()), go.importObject
-				);
+				let result;
+				try {
+					result = await WebAssembly.instantiateStreaming(
+						fetch("wasm.wasm?v=" + Date.now()), go.importObject
+					);
+				} catch (streamErr) {
+					// Fallback p/ servidores sem MIME application/wasm
+					const resp = await fetch("wasm.wasm?v=" + Date.now());
+					result = await WebAssembly.instantiate(await resp.arrayBuffer(), go.importObject);
+				}
 				go.run(result.instance);
 				wasmPronto = true;
-				printLog("> KERNEL WASM OPERACIONAL.", "sucesso");
+				printLog("> KERNEL WASM GO OPERACIONAL.", "sucesso");
 				return true;
 			} catch (err) {
 				printLog("> ERRO AO INICIALIZAR KERNEL WASM: " + err, "erro");
@@ -219,90 +266,126 @@
 			printLog(`> STATUS: [${barra}] ${pct}% (${carregados}/${totalDiscos} discos montados)`, "progresso barra-progresso");
 		}
 
-		// --- PROCESSAMENTO DO DISCO COM INTEGRIDADE CRIPTOGRÁFICA ---
+		function resetarEstado() {
+			discos = [];
+			totalDiscos = 0;
+			algoritmo = "brotli";
+			formato = null;
+			rootSha256Esperado = null;
+			esperandoSenha = false;
+			tentativasSenha = 0;
+			inputCampo.type = 'text';
+		}
+
+		// -------------------------------------------------------------
+		// PROCESSAMENTO DE DISCOS (com integridade criptográfica)
+		// -------------------------------------------------------------
 		async function processarHash(hashStr) {
 			if (hashStr.startsWith('#')) hashStr = hashStr.substring(1);
 			hashStr = hashStr.trim();
 			if (!hashStr) return;
 
-			// Comando de reiniciar
 			if (hashStr.toLowerCase() === "reboot" || hashStr.toLowerCase() === "clear") {
-				discos = [];
-				totalDiscos = 0;
-				rootSha256Esperado = null;
+				resetarEstado();
 				terminal.innerHTML = '';
 				printLog("> SISTEMA REINICIALIZADO.");
 				verificarProgresso();
 				return;
 			}
 
-			// 1. Tenta formato V2: v2;[algo];[parte/total];[chunk_sha256];[root_sha256];[payload]
-			const regexV2 = /^v2;([a-z0-9_-]+);\[(\d+)\/(\d+)\];([a-f0-9]{64});([a-f0-9]{64});(.*)$/;
-			const matchV2 = hashStr.match(regexV2);
+			// 1. Formato V2E criptografado: v2e;[algo];[parte/total];[chunk_sha];[root_sha];[payload]
+			let m = hashStr.match(/^v2e;([a-z0-9_-]+);\[(\d+)\/(\d+)\];([a-f0-9]{64});([a-f0-9]{64});(.*)$/);
+			if (m) return montarDisco(m[1], parseInt(m[2]), parseInt(m[3]), m[4], m[5], m[6], 'v2e', true);
 
-			if (matchV2) {
-				const algo = matchV2[1];
-				const parteAtual = parseInt(matchV2[2]);
-				const total = parseInt(matchV2[3]);
-				const chunkShaDeclarado = matchV2[4];
-				const rootShaDeclarado = matchV2[5];
-				const payloadBruto = matchV2[6];
+			// 2. Formato V2 atestado: v2;[algo];[parte/total];[chunk_sha];[root_sha];[payload]
+			m = hashStr.match(/^v2;([a-z0-9_-]+);\[(\d+)\/(\d+)\];([a-f0-9]{64});([a-f0-9]{64});(.*)$/);
+			if (m) return montarDisco(m[1], parseInt(m[2]), parseInt(m[3]), m[4], m[5], m[6], 'v2', false);
 
-				algoritmo = algo;
-				totalDiscos = total;
-				if (!rootSha256Esperado) rootSha256Esperado = rootShaDeclarado;
+			// 3. Formato V1 legado: v1;[parte/total]payload
+			m = hashStr.match(/^v1;\[(\d+)\/(\d+)\](.*)/);
+			if (m) {
+				const parteAtual = parseInt(m[1]);
+				const total = parseInt(m[2]);
+				const payloadBruto = m[3];
 
-				// Validação criptográfica do bloco
-				const chunkShaCalculado = await calcSha256(payloadBruto);
-				if (chunkShaCalculado !== chunkShaDeclarado) {
-					printLog(`> [FALHA DE INTEGRIDADE] Disco ${parteAtual}/${total}: SHA-256 inválido!`, "erro");
-					printLog(`   Esperado: ${chunkShaDeclarado}`, "erro");
-					printLog(`   Calculado: ${chunkShaCalculado}`, "erro");
-					verificarProgresso();
+				if (rootSha256Esperado && formato !== 'v1') {
+					printLog("> [FALHA DE INTEGRIDADE] MISTURA DE FORMATOS V1/V2 DETECTADA!", "erro");
 					return;
 				}
-
-				if (discos.length !== totalDiscos) {
-					discos = new Array(totalDiscos).fill(null);
-				}
-
-				discos[parteAtual - 1] = payloadBruto;
-				printLog(`> [OK] DISCO ATTESTADO [${parteAtual}/${totalDiscos}] MONTADO. (SHA-256: ${chunkShaDeclarado.slice(0, 16)}...)`, "sucesso");
-				renderProgresso();
-				verificarProgresso();
-				return;
-			}
-
-			// 2. Formato V1 legado: v1;[1/2]payload
-			const regexV1 = /^v1;\[(\d+)\/(\d+)\](.*)/;
-			const matchV1 = hashStr.match(regexV1);
-
-			if (matchV1) {
-				const parteAtual = parseInt(matchV1[1]);
-				totalDiscos = parseInt(matchV1[2]);
-				const payloadBruto = matchV1[3];
+				if (discos.length !== total) discos = new Array(total).fill(null);
+				formato = 'v1';
+				totalDiscos = total;
 				algoritmo = "brotli";
-
-				if (discos.length !== totalDiscos) {
-					discos = new Array(totalDiscos).fill(null);
-				}
-
 				discos[parteAtual - 1] = payloadBruto;
-				printLog(`> LIDO SETOR V1 [${parteAtual}/${totalDiscos}] (${payloadBruto.length} BYTES)`, "alerta");
+
+				printLog(`> LIDO SETOR V1 [${parteAtual}/${total}] (${payloadBruto.length} BYTES) — SEM ATESTAÇÃO`, "alerta");
 				renderProgresso();
 				verificarProgresso();
 				return;
 			}
 
-			// 3. Volume único não particionado
-			discos = [hashStr];
+			// 4. Volume único não particionado (payload bruto v1-era)
+			if (discos.length !== 1) discos = new Array(1).fill(null);
+			formato = 'raw';
 			totalDiscos = 1;
 			algoritmo = "brotli";
-			printLog("> VOLUME ÚNICO DETECTADO.");
+			discos[0] = hashStr;
+			printLog("> VOLUME ÚNICO DETECTADO (SEM ATESTAÇÃO).");
 			verificarProgresso();
 		}
 
-		function verificarProgresso() {
+		async function montarDisco(algo, parteAtual, total, chunkSha, rootSha, payloadBruto, fmt, criptografado) {
+			algoritmo = algo;
+			formato = fmt;
+			totalDiscos = total;
+
+			// Consistência do conjunto: todos os discos devem declarar a mesma raiz.
+			if (rootSha256Esperado && rootSha256Esperado !== rootSha) {
+				printLog(`> [FALHA DE INTEGRIDADE] DISCO ${parteAtual} PERTENCE A OUTRO CONJUNTO!`, "erro");
+				printLog(`   Raiz esperada: ${rootSha256Esperado}`, "erro");
+				printLog(`   Raiz declarada: ${rootSha}`, "erro");
+				return;
+			}
+			if (!rootSha256Esperado) rootSha256Esperado = rootSha;
+
+			// Validação criptográfica do bloco
+			const chunkShaCalculado = await calcSha256(payloadBruto);
+			if (chunkShaCalculado !== chunkSha) {
+				printLog(`> [FALHA DE INTEGRIDADE] Disco ${parteAtual}/${total}: SHA-256 inválido!`, "erro");
+				printLog(`   Esperado: ${chunkSha}`, "erro");
+				printLog(`   Calculado: ${chunkShaCalculado}`, "erro");
+				verificarProgresso();
+				return;
+			}
+
+			if (discos.length !== totalDiscos) discos = new Array(totalDiscos).fill(null);
+			discos[parteAtual - 1] = payloadBruto;
+
+			printLog(`> [OK] DISCO ATTESTADO [${parteAtual}/${totalDiscos}] MONTADO (SHA-256: ${chunkSha.slice(0, 16)}...)${criptografado ? " [AES-256-GCM]" : ""}`, "sucesso");
+			renderProgresso();
+			verificarProgresso();
+		}
+
+		function processarManifest(text) {
+			try {
+				const mf = JSON.parse(text);
+				printLog(`> MANIFEST: ${mf.source_file || "?"} | algo=${mf.algorithm} | ${mf.total_disks} disquete(s) | formato=${mf.format_version}${mf.encrypted ? " | CRIPTOGRAFADO" : ""}`);
+				if (!totalDiscos && mf.total_disks > 0) {
+					totalDiscos = mf.total_disks;
+					discos = new Array(totalDiscos).fill(null);
+					if (mf.root_sha256) rootSha256Esperado = mf.root_sha256;
+					if (mf.algorithm) algoritmo = mf.algorithm;
+					if (mf.format_version) formato = mf.format_version;
+					if (mf.pbkdf2_iterations) iteracoesPBKDF2 = mf.pbkdf2_iterations;
+					printLog("> MANIFEST PRÉ-CARREGADO. AGUARDANDO DISQUETES...", "sucesso");
+				}
+				verificarProgresso();
+			} catch (e) {
+				printLog("> MANIFEST ILEGÍVEL: " + e.message, "erro");
+			}
+		}
+
+		async function verificarProgresso() {
 			let discoFaltando = -1;
 			for (let i = 0; i < totalDiscos; i++) {
 				if (!discos[i]) {
@@ -311,73 +394,166 @@
 				}
 			}
 
+			if (esperandoSenha) return; // entrada atual é para a senha
+
 			if (totalDiscos === 0 || discoFaltando !== -1) {
 				inputContainer.style.display = 'block';
-				prompt.innerText = totalDiscos === 0 ? `> INSIRA O DISCO 1: ` : `> INSIRA O DISCO ${discoFaltando}: `;
+				prompt.innerText = totalDiscos === 0
+					? `> INSIRA O DISCO 1 (ou arraste os arquivos aqui): `
+					: `> INSIRA O DISCO ${discoFaltando}: `;
 				inputCampo.value = '';
 				inputCampo.focus();
-			} else {
-				inputContainer.style.display = 'none';
-				printLog("> TODOS OS DISCOS INSERIDOS E ATTESTADOS!", "sucesso");
-				const payloadCompleto = discos.join('');
-				executarPayload(payloadCompleto);
+				return;
+			}
+
+			inputContainer.style.display = 'none';
+			printLog("> TODOS OS DISCOS INSERIDOS E ATTESTADOS!", "sucesso");
+
+			const payloadCompleto = discos.join('');
+
+			// ATESTAÇÃO RAIZ: SHA-256 do conjunto completo
+			if (rootSha256Esperado) {
+				printLog("> VERIFICANDO ATESTAÇÃO RAIZ (SHA-256 DO CONJUNTO)...");
+				const raizCalculada = await calcSha256(payloadCompleto);
+				if (raizCalculada !== rootSha256Esperado) {
+					printLog("> [FALHA DE INTEGRIDADE] RAIZ INVÁLIDA! PAYLOAD CORROMPIDO OU TROCADO.", "erro");
+					printLog(`   Esperada: ${rootSha256Esperado}`, "erro");
+					printLog(`   Calculada: ${raizCalculada}`, "erro");
+					rootSha256Esperado = null;
+					promptReboot();
+					return;
+				}
+				printLog(`> ATESTAÇÃO RAIZ OK (${raizCalculada.slice(0, 16)}...)`, "sucesso");
+			} else if (formato === 'v1' || formato === 'raw') {
+				printLog("> FORMATO LEGADO: SEM ATESTAÇÃO CRIPTOGRÁFICA.", "alerta");
+			}
+
+			if (formato === 'v2e') {
+				pedirSenha();
+				return;
+			}
+
+			await descomprimirEInjetar(null, payloadCompleto);
+		}
+
+		// -------------------------------------------------------------
+		// FLUXO DE CRIPTOGRAFIA (v2e): PBKDF2-SHA256 + AES-256-GCM
+		// -------------------------------------------------------------
+		function pedirSenha() {
+			esperandoSenha = true;
+			inputCampo.type = 'password';
+			inputContainer.style.display = 'block';
+			prompt.innerText = totalDiscos > 1
+				? `> PAYLOAD CRIPTOGRAFADO. DIGITE A SENHA DO DISCO: `
+				: `> PAYLOAD CRIPTOGRAFADO. DIGITE A SENHA: `;
+			inputCampo.value = '';
+			inputCampo.focus();
+		}
+
+		async function tentarSenha(senha) {
+			const payloadCompleto = discos.join('');
+			printLog(`> DERIVANDO CHAVE (PBKDF2-HMAC-SHA256, ${iteracoesPBKDF2} ITERAÇÕES)...`);
+			try {
+				const wire = base64UrlToUint8Array(payloadCompleto); // salt(16) || iv(12) || ciphertext+tag
+				const salt = wire.slice(0, 16);
+				const iv = wire.slice(16, 28);
+				const ct = wire.slice(28);
+
+				const baseKey = await crypto.subtle.importKey(
+					'raw', new TextEncoder().encode(senha), 'PBKDF2', false, ['deriveKey']
+				);
+				const key = await crypto.subtle.deriveKey(
+					{ name: 'PBKDF2', salt, iterations: iteracoesPBKDF2, hash: 'SHA-256' },
+					baseKey,
+					{ name: 'AES-GCM', length: 256 },
+					false,
+					['decrypt']
+				);
+				const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+
+				esperandoSenha = false;
+				tentativasSenha = 0;
+				inputCampo.type = 'text';
+				printLog("> PAYLOAD DECRIPTADO COM SUCESSO.", "sucesso");
+				await descomprimirEInjetar(new Uint8Array(plain), null);
+			} catch (e) {
+				tentativasSenha++;
+				if (tentativasSenha >= MAX_TENTATIVAS_SENHA) {
+					printLog(`> MÁXIMO DE ${MAX_TENTATIVAS_SENHA} TENTATIVAS EXCEDIDO.`, "erro");
+					esperandoSenha = false;
+					inputCampo.type = 'text';
+					promptReboot();
+					return;
+				}
+				printLog(`> SENHA INVÁLIDA OU DADOS CORROMPIDOS (TENTATIVA ${tentativasSenha}/${MAX_TENTATIVAS_SENHA}).`, "erro");
+				pedirSenha();
 			}
 		}
 
-		// --- EXECUÇÃO E DESCOMPRESSÃO HÍBRIDA ---
-		async function executarPayload(payloadString) {
+		// -------------------------------------------------------------
+		// DESCOMPRESSÃO HÍBRIDA + INJEÇÃO ISOLADA
+		// -------------------------------------------------------------
+		async function descomprimirEInjetar(compressedBytes, payloadB64) {
 			printLog(`> DESCOMPRIMINDO MATRIZ DE DADOS [ALGORITMO: ${algoritmo.toUpperCase()}]...`);
+			if (compressedBytes === null) compressedBytes = base64UrlToUint8Array(payloadB64);
 
 			try {
 				let htmlPuro = "";
 
 				if (algoritmo === "deflate" || algoritmo === "gzip") {
-					// Descompressão nativa instantânea (<5ms, zero WASM!)
 					const format = algoritmo === "deflate" ? "deflate-raw" : "gzip";
-					const binaryBytes = base64UrlToUint8Array(payloadString);
-					htmlPuro = await decompressNative(binaryBytes, format);
-					printLog("> DESCOMPRESSÃO NATIVA CONCLUÍDA.", "sucesso");
-				} else {
-					// Brotli: Usa o kernel WebAssembly
-					if (!wasmPronto) {
+					htmlPuro = await decompressNative(compressedBytes, format);
+					printLog("> DESCOMPRESSÃO NATIVA (ZERO-WASM) CONCLUÍDA.", "sucesso");
+				} else { // brotli
+					const decoder = await getBrotliDecoder();
+					if (decoder) {
+						htmlPuro = new TextDecoder().decode(decoder(compressedBytes));
+						printLog("> DESCOMPRESSÃO BROTLI DEDICADA CONCLUÍDA.", "sucesso");
+					} else {
+						if (!payloadB64) payloadB64 = bytesToBase64Url(compressedBytes);
 						const ok = await bootWasm();
-						if (!ok) throw new Error("Kernel WASM indisponível para descompressão Brotli.");
+						if (!ok || typeof window.decoder !== 'function') {
+							throw new Error("Nenhum decodificador Brotli disponível.");
+						}
+						htmlPuro = window.decoder(payloadB64);
+						if (htmlPuro.startsWith("Error")) throw new Error(htmlPuro);
+						printLog("> DESCOMPRESSÃO BROTLI VIA KERNEL GO CONCLUÍDA.", "sucesso");
 					}
-					htmlPuro = window.decoder(payloadString);
-					if (htmlPuro.startsWith("Error")) {
-						throw new Error(htmlPuro);
-					}
-					printLog("> DESCOMPRESSÃO BROTLI WASM CONCLUÍDA.", "sucesso");
 				}
 
 				printLog("> INJETANDO AMBIENTE NO DOM COM ISOLAMENTO SEGURO...");
 				setTimeout(() => {
 					const iframe = document.createElement('iframe');
 					iframe.style.cssText = "position:absolute; top:0; left:0; width:100vw; height:100vh; border:none; z-index:9999; background: white;";
-					iframe.setAttribute("sandbox", "allow-scripts allow-forms allow-same-origin allow-popups");
+					// Sem allow-same-origin: o site hóspede roda em origem opaca,
+					// sem acesso ao bootloader, ao hash da URL ou ao storage do host.
+					iframe.setAttribute("sandbox", "allow-scripts allow-forms allow-popups");
 					iframe.srcdoc = htmlPuro;
 					document.body.innerHTML = '';
 					document.body.appendChild(iframe);
 				}, 400);
 
 			} catch (e) {
-				printLog("> FALHA CRÍTICA NA DESCOMPRESSÃO: " + e.message, "erro");
-				inputContainer.style.display = 'block';
-				prompt.innerText = `> DIGITE 'reboot' PARA RECOMEÇAR: `;
-				inputCampo.focus();
+				printLog("> FALHA CRÍTICA NA DESCOMPRESSÃO: " + (e.message || e), "erro");
+				promptReboot();
 			}
 		}
 
-		// EVENTO DE TECLADO
+		// -------------------------------------------------------------
+		// ENTRADA: TECLADO, DRAG & DROP, HASHCHANGE
+		// -------------------------------------------------------------
 		inputCampo.addEventListener('keypress', function (e) {
-			if (e.key === 'Enter') {
-				const val = inputCampo.value.trim();
-				inputCampo.value = '';
+			if (e.key !== 'Enter') return;
+			const val = inputCampo.value.trim();
+			inputCampo.value = '';
+			if (esperandoSenha) {
+				if (!val) return;
+				tentarSenha(val);
+			} else {
 				processarHash(val);
 			}
 		});
 
-		// SUPORTE A DRAG & DROP DE ARQUIVOS (.TXT DE DISCOS)
 		window.addEventListener('dragover', (e) => {
 			e.preventDefault();
 			dropZone.style.display = 'flex';
@@ -389,28 +565,41 @@
 			}
 		});
 
-		window.addEventListener('drop', (e) => {
+		window.addEventListener('drop', async (e) => {
 			e.preventDefault();
 			dropZone.style.display = 'none';
-			const files = e.dataTransfer.files;
-			if (files.length > 0) {
-				const reader = new FileReader();
-				reader.onload = function(evt) {
-					printLog(`> ARQUIVO ARRASTADO: ${files[0].name} (${files[0].size} bytes)`);
-					processarHash(evt.target.result);
-				};
-				reader.readAsText(files[0]);
+			const files = Array.from(e.dataTransfer.files || []);
+			for (const f of files) {
+				try {
+					const text = await f.text();
+					printLog(`> ARQUIVO RECEBIDO: ${f.name} (${f.size} bytes)`);
+					if (/manifest\.json$/i.test(f.name)) {
+						processarManifest(text);
+					} else if (esperandoSenha) {
+						printLog("> AGUARDANDO SENHA — ARQUIVO IGNORADO.", "alerta");
+					} else {
+						await processarHash(text);
+					}
+				} catch (err) {
+					printLog(`> FALHA AO LER ${f.name}: ${err.message || err}`, "erro");
+				}
 			}
 		});
 
+		// Colar nova URL com disco sem recarregar a página
+		window.addEventListener('hashchange', () => {
+			const h = window.location.hash;
+			if (h.length > 1 && !esperandoSenha) processarHash(h);
+		});
+
 		// BOOT INICIAL
-		window.onload = async () => {
+		window.onload = () => {
 			const hashAtual = window.location.hash;
 			if (hashAtual.length > 1) {
 				processarHash(hashAtual);
 			} else {
 				inputContainer.style.display = 'block';
-				prompt.innerText = `> INSIRA O DISCO 1 (ou arraste o arquivo aqui): `;
+				prompt.innerText = `> INSIRA O DISCO 1 (ou arraste os arquivos aqui): `;
 				inputCampo.focus();
 			}
 		};

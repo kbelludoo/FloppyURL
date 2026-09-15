@@ -1,4 +1,4 @@
-module github.com/Xelckis/floppyURL
+module github.com/kbelludoo/FloppyURL
 
 go 1.25.0
 

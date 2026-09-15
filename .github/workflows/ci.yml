@@ -1,0 +1,76 @@
+# FloppyURL — CI: testes unitários Go + E2E headless + build do kernel WASM
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: gofmt (sem divergências)
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "arquivos não formatados:"; echo "$out"; exit 1; fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./... -v
+
+      - name: Compilar kernel WASM (cmd/wasmdecoder)
+        run: |
+          GOOS=js GOARCH=wasm go build -o Website/wasm.wasm ./cmd/wasmdecoder
+          cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" Website/wasm_exec.js
+
+      - name: Verificar checksums do Brotli vendorizado
+        working-directory: Website/vendor/brotli
+        run: sha256sum -c CHECKSUMS.txt
+
+      - name: E2E headless (Node: hashes, AES-GCM, descompressão)
+        run: |
+          make demos
+          node scripts/e2e.mjs disks_e2e/brotli
+          node scripts/e2e.mjs disks_e2e/deflate
+          node scripts/e2e.mjs disks_e2e/gzip
+          node scripts/e2e.mjs disks_e2e/raid
+          node scripts/e2e.mjs disks_e2e/v1
+          node scripts/e2e.mjs disks_e2e/encrypted --pass "senha@forte2026"
+          # cenário negativo: disco corrompido PRECISA falhar
+          cp -r disks_e2e/raid disks_e2e/tampered
+          python3 - <<'EOF'
+          p = 'disks_e2e/tampered/disk_02.txt'
+          s = open(p).read()
+          parts = s.split(';', 5)
+          parts[5] = parts[5][:10] + ('A' if parts[5][10] != 'A' else 'B') + parts[5][11:]
+          open(p, 'w').write(';'.join(parts))
+          EOF
+          if node scripts/e2e.mjs disks_e2e/tampered; then
+            echo "ERRO: payload corrompido passou na atestação"; exit 1
+          else
+            echo "OK: corrupção detectada pela atestação SHA-256"
+          fi
+
+      - name: Upload do kernel WASM
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-kernel
+          path: Website/wasm.wasm
+          retention-days: 7

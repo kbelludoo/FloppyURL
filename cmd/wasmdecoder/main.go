@@ -1,3 +1,9 @@
+//go:build js && wasm
+
+// FloppyURL WASM kernel: exposes window.decoder(base64urlBrotli) to the
+// bootloader as a fallback Brotli decompressor. Compiled with:
+//
+//	GOOS=js GOARCH=wasm go build -o Website/wasm.wasm ./cmd/wasmdecoder
 package main
 
 import (
@@ -22,9 +28,7 @@ func main() {
 			return fmt.Sprintf("Error decoding base64: %v", err)
 		}
 
-		bytesReader := bytes.NewReader(decoded)
-
-		brotliReader := brotli.NewReader(bytesReader)
+		brotliReader := brotli.NewReader(bytes.NewReader(decoded))
 
 		uncompressedData, err := io.ReadAll(brotliReader)
 		if err != nil {

@@ -1,0 +1,4 @@
+brotli-dec-wasm 2.3.2 (https://github.com/torao/brotli-dec-wasm)
+Vendorizado de registry.npmjs.org/brotli-dec-wasm/-/brotli-dec-wasm-2.3.2.tgz
+Duplo licenciamento MIT / Apache-2.0 (ver LICENSE-*.txt).
+Verifique a integridade com: sha256sum -c CHECKSUMS.txt

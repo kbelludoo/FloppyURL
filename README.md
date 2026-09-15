@@ -65,9 +65,8 @@ Inspirado no projeto original [Xelckis/FloppyURL](https://github.com/Xelckis/Flo
 │   ├── wasm.wasm              # (gerado) `make build-wasm` / CI — fora do Git
 │   └── vendor/brotli/         # brotli-dec-wasm 2.3.2 + CHECKSUMS.txt
 ├── examples/demo.html         # Site de demonstração
-├── .github/workflows/
-│   ├── ci.yml                 # gofmt, vet, test, build WASM, E2E (positivo+negative)
-│   └── deploy-pages.yml       # Deploy do bootloader no GitHub Pages
+├── contrib/github-workflows/  # Workflows prontos p/ GitHub Actions (ci + Pages)
+│   └── INSTALAR.md            #   como ativá-los em .github/workflows/
 └── Makefile
 ```
 

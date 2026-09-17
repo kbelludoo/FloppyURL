@@ -760,33 +760,59 @@
       resultsList.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);"><span class="spinner" style="border-top-color:var(--primary);"></span> Pesquisando na web em alta velocidade...</div>';
 
       try {
-        // Tenta buscar no Colab Search Server
         let items = [];
+
+        // 1. Busca primeiro na biblioteca local offline (IndexedDB)
+        try {
+          const localArticles = await getAllFromDB();
+          const qLower = query.toLowerCase();
+          const localMatches = localArticles.filter(a =>
+            (a.title && a.title.toLowerCase().includes(qLower)) ||
+            (a.html && a.html.toLowerCase().includes(qLower))
+          );
+          localMatches.forEach(m => {
+            items.push({
+              title: `💾 [Salvo no Aparelho] ${m.title}`,
+              snippet: `Página disponível 100% offline. Salva em ${new Date(m.savedAt).toLocaleDateString('pt-BR')}`,
+              url: m.hash,
+              isLocal: true,
+              localId: m.id
+            });
+          });
+        } catch(e) {}
+
+        // 2. Tenta buscar no Colab Search Server (se túnel estiver online com /search)
         try {
           const resp = await fetch(`${serverUrl}/search?q=${encodeURIComponent(query)}`);
           if (resp.ok) {
-            items = await resp.json();
+            const serverItems = await resp.json();
+            if (Array.isArray(serverItems) && serverItems.length > 0) {
+              items = items.concat(serverItems);
+            }
           }
         } catch (e) {}
 
-        // Se falhar ou estiver offline, busca na Wikipédia pública
-        if (!items || items.length === 0) {
-          const wikiResp = await fetch(`https://pt.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=7&namespace=0&format=json&origin=*`);
-          if (wikiResp.ok) {
-            const wikiData = await wikiResp.json();
-            const titles = wikiData[1] || [];
-            const snippets = wikiData[2] || [];
-            const urls = wikiData[3] || [];
-            items = titles.map((t, idx) => ({
-              title: t,
-              snippet: snippets[idx] || "Artigo enciclopédico de referência.",
-              url: urls[idx]
-            }));
-          }
+        // 3. Fallback Full-Text Search público global (Wikipédia Full-Text API)
+        if (items.length <= 1) {
+          try {
+            const wikiResp = await fetch(`https://pt.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&utf8=&format=json&origin=*`);
+            if (wikiResp.ok) {
+              const wikiData = await wikiResp.json();
+              const hits = (wikiData.query && wikiData.query.search) || [];
+              const cleanTags = (s) => s ? s.replace(/<[^>]*>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&') : '';
+              hits.forEach(h => {
+                items.push({
+                  title: h.title,
+                  snippet: cleanTags(h.snippet) + '...',
+                  url: `https://pt.wikipedia.org/wiki/${encodeURIComponent(h.title)}`
+                });
+              });
+            }
+          } catch(e) {}
         }
 
-        if (!items || items.length === 0) {
-          resultsList.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">Nenhum resultado encontrado. Tente outras palavras ou digite a URL direta do site.</div>';
+        if (items.length === 0) {
+          resultsList.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">Nenhum resultado encontrado. Tente outras palavras ou digite a URL direta do site (ex: <code>g1.globo.com</code>).</div>';
           return;
         }
 
@@ -796,12 +822,14 @@
         items.forEach((item) => {
           const card = document.createElement('div');
           card.className = 'result-card';
+          const clickAction = item.isLocal ? `openSaved('${item.localId}')` : `abrirSiteRemoto('${item.url}')`;
+          const btnLabel = item.isLocal ? '📖 Abrir da Memória (Offline)' : '⚡ Abrir no PocketWeb (Leve)';
           card.innerHTML = `
-            <div class="result-url">🌐 ${item.url}</div>
-            <a class="result-title" href="javascript:void(0)" onclick="abrirSiteRemoto('${item.url}')">${item.title}</a>
+            <div class="result-url">${item.isLocal ? '💾 Armazenamento Local' : '🌐 ' + item.url}</div>
+            <a class="result-title" href="javascript:void(0)" onclick="${clickAction}">${item.title}</a>
             <div class="result-snippet">${item.snippet || ''}</div>
             <div class="result-actions">
-              <button class="btn-pack-open" onclick="abrirSiteRemoto('${item.url}')">⚡ Abrir no PocketWeb (Leve)</button>
+              <button class="btn-pack-open" onclick="${clickAction}">${btnLabel}</button>
             </div>
           `;
           resultsList.appendChild(card);

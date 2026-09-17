@@ -693,24 +693,69 @@
       }
     };
 
-    // --- ABRIR SITE COMPACTADO REMOTO ---
+    // --- ABRIR SITE COMPACTADO REMOTO COM MULTI-CAMADA RESILIENTE ---
     async function abrirSiteRemoto(targetUrl) {
       currentRemoteURL = targetUrl;
-      showToast('⚡ Compactando site remoto a 1Gbps...');
+      showToast('⚡ Carregando página para leitura remota...');
+
+      // 1. Caso especial: Wikipédia (API REST oficial direta com CORS nativo)
+      if (targetUrl.includes('wikipedia.org/wiki/')) {
+        try {
+          const parts = targetUrl.split('/wiki/');
+          const title = parts[1];
+          const lang = targetUrl.includes('pt.wikipedia') ? 'pt' : 'en';
+          const apiUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`;
+          const resp = await fetch(apiUrl);
+          if (resp.ok) {
+            let html = await resp.text();
+            const injection = `<base href="${targetUrl}"><style>body{font-family:-apple-system,sans-serif;line-height:1.6;padding:16px;max-width:800px;margin:auto;color:#202124;background:#fff;}</style><script>document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href&&!a.href.startsWith('javascript:')&&!a.href.startsWith('#')){e.preventDefault();window.parent.postMessage({type:'POCKET_NAV',url:a.href},'*');}});<\/script>`;
+            html = html.replace('<head>', '<head>' + injection);
+            const compBytes = await compressNative(html, 'deflate-raw');
+            const b64 = uint8ArrayToBase64Url(compBytes);
+            const sha = await calcSha256(b64);
+            const hash = `#v2;deflate;[1/1];${sha};${sha};${b64}`;
+            window.location.hash = hash;
+            abrirViewer(decodeURIComponent(title.replace(/_/g, ' ')), html, html.length, compBytes.length, hash, targetUrl);
+            return;
+          }
+        } catch(e) {}
+      }
+
+      // 2. Tenta pelo servidor Cloud Colab
       try {
         const endpoint = `${serverUrl}/pack?url=${encodeURIComponent(targetUrl)}`;
         const resp = await fetch(endpoint);
-        if (!resp.ok) throw new Error("Servidor não respondeu");
-        const data = await resp.json();
-
-        if (data.boot_url) {
-          const hash = data.boot_url.includes('#') ? data.boot_url.split('#')[1] : data.boot_url;
-          window.location.hash = hash;
-          await processarPayload(hash, targetUrl);
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.boot_url) {
+            const hash = data.boot_url.includes('#') ? data.boot_url.split('#')[1] : data.boot_url;
+            window.location.hash = hash;
+            await processarPayload(hash, targetUrl);
+            return;
+          }
         }
-      } catch (err) {
-        alert("Erro ao abrir site: " + err.message + "\nVerifique se o servidor Colab está ativo.");
-      }
+      } catch (err) {}
+
+      // 3. Fallback inteligente via CORS Proxy
+      try {
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+        const resp = await fetch(proxyUrl);
+        if (resp.ok) {
+          let html = await resp.text();
+          const injection = `<base href="${targetUrl}"><script>document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href&&!a.href.startsWith('javascript:')&&!a.href.startsWith('#')){e.preventDefault();window.parent.postMessage({type:'POCKET_NAV',url:a.href},'*');}});<\/script>`;
+          if (html.includes('<head>')) html = html.replace('<head>', '<head>' + injection);
+          else html = injection + html;
+          const compBytes = await compressNative(html, 'deflate-raw');
+          const b64 = uint8ArrayToBase64Url(compBytes);
+          const sha = await calcSha256(b64);
+          const hash = `#v2;deflate;[1/1];${sha};${sha};${b64}`;
+          window.location.hash = hash;
+          abrirViewer(targetUrl, html, html.length, compBytes.length, hash, targetUrl);
+          return;
+        }
+      } catch(e) {}
+
+      alert("Não foi possível carregar a página no momento.\nVerifique se o seu servidor Colab está online.");
     }
 
     // --- DESCOMPRESSÃO DE PAYLOAD #v2;... ---

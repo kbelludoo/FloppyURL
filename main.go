@@ -109,6 +109,7 @@ func sha256Hex(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+
 func main() {
 	inputFile := flag.String("file", "", "Caminho para o arquivo HTML ou LIN de entrada (obrigatorio)")
 	algo := flag.String("algo", "deflate", "Algoritmo de compressao: deflate (instant zero-wasm default), brotli (max ratio), gzip")

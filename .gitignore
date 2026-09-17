@@ -5,3 +5,6 @@ disks_*/
 output/
 *.log
 .DS_Store
+floppy-pack
+__pycache__/
+*.pyc

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"compress/flate"
-	"compress/gzip"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -17,7 +16,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/andybalholm/brotli"
 	"github.com/tdewolff/minify/v2"
 	minifyHtml "github.com/tdewolff/minify/v2/html"
 )
@@ -218,27 +216,12 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 		minified = rawHTML
 	}
 
-	var compBytes []byte
-	if algo == "brotli" {
-		var buf bytes.Buffer
-		writer := brotli.NewWriterOptions(&buf, brotli.WriterOptions{Quality: 11})
-		writer.Write(minified)
-		writer.Close()
-		compBytes = buf.Bytes()
-	} else if algo == "gzip" {
-		var buf bytes.Buffer
-		writer, _ := gzip.NewWriterLevel(&buf, gzip.BestCompression)
-		writer.Write(minified)
-		writer.Close()
-		compBytes = buf.Bytes()
-	} else {
-		algo = "deflate"
-		var buf bytes.Buffer
-		writer, _ := flate.NewWriter(&buf, flate.BestCompression)
-		writer.Write(minified)
-		writer.Close()
-		compBytes = buf.Bytes()
-	}
+	var buf bytes.Buffer
+	writer, _ := flate.NewWriter(&buf, flate.BestCompression)
+	writer.Write(minified)
+	writer.Close()
+	compBytes := buf.Bytes()
+	algo = "deflate"
 
 	compSize := len(compBytes)
 	encoded := base64.RawURLEncoding.EncodeToString(compBytes)

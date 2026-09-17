@@ -3,41 +3,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PocketWeb - Web Resiliente para Áreas Remotas</title>
+  <title>PocketWeb - Buscador e Navegador para Áreas Remotas</title>
   <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#121820">
+  <meta name="theme-color" content="#ffffff">
   <style>
     :root {
-      --bg: #0b0f14;
-      --surface: #141c24;
-      --surface-border: #222f3e;
-      --primary: #2563eb;
-      --primary-hover: #1d4ed8;
-      --accent: #10b981;
-      --text: #f1f5f9;
-      --text-muted: #94a3b8;
-      --danger: #ef4444;
-      --warning: #f59e0b;
+      --bg: #ffffff;
+      --surface: #f8fafc;
+      --surface-border: #dfe1e5;
+      --primary: #1a73e8;
+      --primary-hover: #1557b0;
+      --accent: #1e8e3e;
+      --text: #202124;
+      --text-muted: #5f6368;
+      --link: #1a0dab;
+      --shadow: 0 1px 6px rgba(32,33,36,.28);
     }
 
-    [data-theme="light"] {
-      --bg: #f8fafc;
-      --surface: #ffffff;
-      --surface-border: #cbd5e1;
-      --primary: #1d4ed8;
-      --primary-hover: #1e40af;
-      --accent: #059669;
-      --text: #0f172a;
-      --text-muted: #64748b;
-      --danger: #dc2626;
-      --warning: #d97706;
+    [data-theme="dark"] {
+      --bg: #12151a;
+      --surface: #1e232b;
+      --surface-border: #3c4043;
+      --primary: #8ab4f8;
+      --primary-hover: #aecbfa;
+      --accent: #81c995;
+      --text: #e8eaed;
+      --text-muted: #9aa0a6;
+      --link: #8ab4f8;
+      --shadow: 0 1px 8px rgba(0,0,0,.6);
     }
 
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
     }
 
     body {
@@ -49,253 +49,277 @@
       transition: background-color 0.2s, color 0.2s;
     }
 
-    /* BARRA SUPERIOR */
+    /* BARRA SUPERIOR DISCRETA */
     header {
-      background-color: var(--surface);
-      border-bottom: 1px solid var(--surface-border);
-      padding: 12px 20px;
+      padding: 14px 24px;
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-end;
       align-items: center;
-      position: sticky;
-      top: 0;
-      z-index: 50;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 700;
-      font-size: 1.15rem;
-      letter-spacing: -0.5px;
-    }
-
-    .brand-icon {
-      background: var(--primary);
-      color: white;
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-    }
-
-    .header-actions {
-      display: flex;
-      align-items: center;
-      gap: 12px;
+      gap: 14px;
+      font-size: 13px;
     }
 
     .status-badge {
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      font-size: 12px;
       padding: 4px 10px;
       border-radius: 20px;
-      background: rgba(16, 185, 129, 0.15);
+      background: rgba(30, 142, 62, 0.12);
       color: var(--accent);
-      border: 1px solid rgba(16, 185, 129, 0.3);
+      border: 1px solid rgba(30, 142, 62, 0.3);
       font-weight: 600;
+      font-size: 12px;
     }
 
     .status-badge.offline {
-      background: rgba(37, 99, 235, 0.15);
-      color: #60a5fa;
-      border-color: rgba(37, 99, 235, 0.3);
+      background: rgba(26, 115, 232, 0.12);
+      color: var(--primary);
+      border-color: rgba(26, 115, 232, 0.3);
     }
 
     .btn-icon {
       background: transparent;
       border: 1px solid var(--surface-border);
       color: var(--text);
-      width: 34px;
-      height: 34px;
-      border-radius: 8px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 14px;
+      font-size: 15px;
     }
     .btn-icon:hover {
-      background: var(--surface-border);
+      background: var(--surface);
     }
 
-    /* CONTAINER PRINCIPAL */
+    /* CONTAINER PRINCIPAL ESTILO GOOGLE */
     main {
       flex: 1;
-      max-width: 900px;
-      width: 100%;
-      margin: 0 auto;
-      padding: 24px 16px;
       display: flex;
       flex-direction: column;
-      gap: 24px;
-    }
-
-    /* CARD */
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--surface-border);
-      border-radius: 12px;
+      align-items: center;
       padding: 20px;
+      width: 100%;
+      max-width: 800px;
+      margin: 0 auto;
     }
 
-    .card-title {
-      font-size: 1.1rem;
-      font-weight: 600;
-      margin-bottom: 8px;
+    .home-hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-top: 6vh;
+      margin-bottom: 26px;
+      text-align: center;
+    }
+
+    .brand-logo {
+      font-size: 3.2rem;
+      font-weight: 700;
+      letter-spacing: -1px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 2px;
+      user-select: none;
     }
 
-    .card-desc {
+    .brand-logo .l-blue { color: #4285f4; }
+    .brand-logo .l-red { color: #ea4335; }
+    .brand-logo .l-yellow { color: #fbbc05; }
+    .brand-logo .l-green { color: #34a853; }
+
+    .brand-sub {
+      font-size: 0.85rem;
       color: var(--text-muted);
-      font-size: 0.9rem;
-      margin-bottom: 16px;
-      line-height: 1.5;
+      margin-top: 4px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      font-weight: 600;
     }
 
-    /* ENTRADA */
-    .input-group {
+    /* BARRA DE PESQUISA GOOGLE */
+    .search-box-wrapper {
+      width: 100%;
+      max-width: 620px;
+      position: relative;
+    }
+
+    .search-box {
+      width: 100%;
       display: flex;
-      gap: 8px;
-    }
-
-    input[type="text"], textarea {
-      flex: 1;
+      align-items: center;
       background: var(--bg);
       border: 1px solid var(--surface-border);
-      color: var(--text);
-      padding: 11px 14px;
-      border-radius: 8px;
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    input[type="text"]:focus, textarea:focus {
-      border-color: var(--primary);
-    }
-
-    .btn-primary {
-      background: var(--primary);
-      color: white;
-      border: none;
+      border-radius: 28px;
       padding: 10px 18px;
-      border-radius: 8px;
-      font-weight: 600;
-      font-size: 14px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      transition: background-color 0.2s;
-      white-space: nowrap;
-    }
-    .btn-primary:hover {
-      background: var(--primary-hover);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      transition: box-shadow 0.2s, border-color 0.2s;
     }
 
-    .btn-secondary {
+    .search-box:focus-within {
+      box-shadow: var(--shadow);
+      border-color: transparent;
+    }
+
+    .search-icon {
+      color: var(--text-muted);
+      margin-right: 12px;
+      font-size: 16px;
+    }
+
+    .search-input {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 16px;
+    }
+
+    .search-clear {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 16px;
+      cursor: pointer;
+      display: none;
+      padding: 4px;
+    }
+
+    /* BOTÕES ESTILO GOOGLE */
+    .search-buttons {
+      margin-top: 22px;
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    .btn-google {
       background: var(--surface);
       border: 1px solid var(--surface-border);
       color: var(--text);
-      padding: 8px 14px;
-      border-radius: 8px;
-      font-size: 13px;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: 500;
+      transition: border-color 0.15s, background-color 0.15s;
+    }
+
+    .btn-google:hover {
+      border-color: #dadce0;
+      background-color: var(--surface-border);
+    }
+
+    /* CHIPS DE ATALHOS RÁPIDOS */
+    .quick-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin-top: 24px;
+      max-width: 650px;
+    }
+
+    .chip {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      color: var(--text);
+      padding: 6px 14px;
+      border-radius: 18px;
+      font-size: 12px;
       font-weight: 500;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
+      transition: background 0.15s;
     }
-    .btn-secondary:hover {
+    .chip:hover {
       background: var(--surface-border);
     }
 
-    /* ABAS */
-    .tabs {
-      display: flex;
-      gap: 8px;
+    /* ÁREA DE RESULTADOS DE BUSCA */
+    #results-area {
+      width: 100%;
+      max-width: 700px;
+      margin-top: 24px;
+      display: none;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .results-count {
+      font-size: 13px;
+      color: var(--text-muted);
       border-bottom: 1px solid var(--surface-border);
       padding-bottom: 8px;
-      margin-bottom: 16px;
+      margin-bottom: 8px;
     }
 
-    .tab-btn {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      font-size: 14px;
-      font-weight: 600;
-      padding: 6px 12px;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-
-    .tab-btn.active {
-      background: var(--surface-border);
-      color: var(--text);
-    }
-
-    /* LISTA */
-    .lib-list {
+    .result-card {
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 4px;
     }
 
-    .lib-item {
-      background: var(--bg);
-      border: 1px solid var(--surface-border);
-      border-radius: 8px;
-      padding: 14px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .lib-item-info {
-      flex: 1;
-      min-width: 0;
-    }
-
-    .lib-item-title {
-      font-weight: 600;
-      font-size: 14px;
-      margin-bottom: 4px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .lib-item-meta {
+    .result-url {
       font-size: 12px;
       color: var(--text-muted);
       display: flex;
-      gap: 12px;
-    }
-
-    .lib-item-actions {
-      display: flex;
+      align-items: center;
       gap: 6px;
+      text-overflow: ellipsis;
+      overflow: hidden;
+      white-space: nowrap;
     }
 
-    .empty-state {
-      text-align: center;
-      padding: 32px 16px;
+    .result-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--link);
+      cursor: pointer;
+      text-decoration: none;
+      line-height: 1.3;
+    }
+    .result-title:hover {
+      text-decoration: underline;
+    }
+
+    .result-snippet {
+      font-size: 13px;
       color: var(--text-muted);
-      font-size: 14px;
+      line-height: 1.5;
+      margin-top: 2px;
     }
 
-    /* VISUALIZADOR DE CONTEÚDO */
+    .result-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 6px;
+    }
+
+    .btn-pack-open {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-pack-open:hover {
+      background: var(--primary-hover);
+    }
+
+    /* VISUALIZADOR HUD */
     #viewer-container {
       display: none;
       position: fixed;
@@ -309,14 +333,14 @@
     }
 
     #viewer-hud {
-      background: #0f172a;
+      background: #111827;
       color: white;
-      padding: 10px 16px;
+      padding: 8px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       font-size: 13px;
-      border-bottom: 1px solid #1e293b;
+      border-bottom: 1px solid #374151;
       gap: 10px;
     }
 
@@ -329,9 +353,9 @@
     .savings-badge {
       background: #065f46;
       color: #34d399;
-      padding: 4px 10px;
-      border-radius: 6px;
-      font-size: 12px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
       font-weight: 600;
     }
 
@@ -342,303 +366,148 @@
       background: white;
     }
 
-    /* MODAIS */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      background: rgba(0, 0, 0, 0.7);
-      z-index: 2000;
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-    }
-
-    .modal {
-      background: var(--surface);
-      border: 1px solid var(--surface-border);
-      border-radius: 12px;
-      padding: 24px;
-      max-width: 480px;
-      width: 100%;
-    }
-
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-
-    .modal-title {
-      font-weight: 600;
-      font-size: 1.1rem;
-    }
-
-    /* TOAST FEEDBACK */
+    /* TOAST */
     #toast {
       position: fixed;
-      bottom: 20px;
-      right: 20px;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
       background: var(--surface);
       color: var(--text);
       border: 1px solid var(--primary);
-      padding: 12px 20px;
-      border-radius: 8px;
+      padding: 10px 22px;
+      border-radius: 24px;
       font-size: 13px;
       font-weight: 500;
-      box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
       display: none;
       z-index: 3000;
     }
 
-    /* SPINNER */
     .spinner {
       display: inline-block;
-      width: 14px;
-      height: 14px;
+      width: 13px;
+      height: 13px;
       border: 2px solid rgba(255,255,255,0.3);
       border-radius: 50%;
       border-top-color: white;
       animation: spin 0.8s linear infinite;
     }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 
-  <!-- BARRA DE NAVEGAÇÃO SUPERIOR -->
+  <!-- BARRA SUPERIOR -->
   <header>
-    <div class="brand">
-      <div class="brand-icon">⚡</div>
-      <span>PocketWeb</span>
+    <div id="net-status" class="status-badge">
+      <span style="font-size: 8px;">●</span> Online
     </div>
-    <div class="header-actions">
-      <div id="net-status" class="status-badge">
-        <span style="font-size: 8px;">●</span> Conectado
-      </div>
-      <button class="btn-icon" id="btn-settings" title="Configurações do Servidor Cloud">⚙️</button>
-      <button class="btn-icon" id="btn-theme" title="Alternar Modo Solar / Noturno">🌓</button>
-    </div>
+    <button class="btn-icon" id="btn-library" title="Minha Biblioteca Offline (Páginas Salvas)">💾</button>
+    <button class="btn-icon" id="btn-theme" title="Modo Solar / Noturno">🌓</button>
   </header>
 
-  <!-- CONTEÚDO PRINCIPAL -->
-  <main>
-    <!-- CARD DE ENTRADA INTELIGENTE (URL OU PAYLOAD) -->
-    <div class="card">
-      <h2 class="card-title">🌐 Acessar ou Compactar Site</h2>
-      <p class="card-desc">
-        Digite a <strong>URL de qualquer site</strong> (ex: <code>https://news.ycombinator.com</code> ou <code>g1.globo.com</code>) para compactá-lo para áreas remotas, ou cole um link compactado (<code>#v2;...</code>) para abrir sem internet.
-      </p>
-      <div class="input-group">
-        <input type="text" id="payload-input" placeholder="Digite uma URL (ex: https://...) ou cole o payload #v2;..." autocomplete="off" />
-        <button class="btn-primary" id="btn-open">
-          <span id="btn-open-text">Acessar</span>
-        </button>
+  <!-- CONTAINER CENTRAL ESTILO GOOGLE -->
+  <main id="main-content">
+    
+    <div class="home-hero" id="home-hero">
+      <div class="brand-logo">
+        <span class="l-blue">P</span><span class="l-red">o</span><span class="l-yellow">c</span><span class="l-blue">k</span><span class="l-green">e</span><span class="l-red">t</span><span style="font-weight: 300; margin-left: 2px;">Web</span>
+      </div>
+      <div class="brand-sub">Busca e Navegação Ultra-Leve para Áreas Remotas</div>
+    </div>
+
+    <!-- CAMPO DE BUSCA -->
+    <div class="search-box-wrapper">
+      <div class="search-box">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" class="search-input" placeholder="Pesquisar na web ou digitar site (ex: notícias, uol.com.br)..." autocomplete="off" autofocus />
+        <button id="search-clear" class="search-clear">✕</button>
       </div>
     </div>
 
-    <!-- ABAS -->
-    <div>
-      <div class="tabs">
-        <button class="tab-btn active" id="tab-btn-lib" onclick="switchTab('lib')">💾 Minha Biblioteca Offline</button>
-        <button class="tab-btn" id="tab-btn-pack" onclick="switchTab('pack')">📦 Compactador de Notas</button>
-        <button class="tab-btn" id="tab-btn-samples" onclick="switchTab('samples')">🚨 Manuais de Emergência</button>
-      </div>
-
-      <!-- ABA 1: BIBLIOTECA LOCAL INDEXEDDB -->
-      <div id="tab-content-lib" class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-          <h3 class="card-title" style="margin-bottom: 0;">Páginas Salvas no Aparelho</h3>
-          <span style="font-size: 12px; color: var(--text-muted);" id="lib-count">0 páginas</span>
-        </div>
-        <div id="lib-list" class="lib-list">
-          <div class="empty-state">
-            Nenhuma página salva ainda. Abra qualquer site e clique no botão "💾 Salvar Offline" para guardá-lo permanentemente na memória do aparelho.
-          </div>
-        </div>
-      </div>
-
-      <!-- ABA 2: COMPACTADOR LOCAL OFFLINE -->
-      <div id="tab-content-pack" class="card" style="display: none;">
-        <h3 class="card-title">Criar Pacote Compactado no Aparelho</h3>
-        <p class="card-desc">
-          Digite ou cole um comunicado, manual ou código HTML para gerar um link ultra-leve para enviar via SMS, rádio ou satélite (100% no navegador, sem servidor).
-        </p>
-        <div style="display: flex; flex-direction: column; gap: 10px;">
-          <input type="text" id="pack-title" placeholder="Título da Página (Ex: Relatório de Campo)" />
-          <textarea id="pack-content" rows="6" placeholder="Digite o conteúdo ou cole código HTML aqui..."></textarea>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 12px; color: var(--text-muted);" id="pack-stats">0 caracteres</span>
-            <button class="btn-primary" id="btn-pack-generate">Gerar Link Resiliente</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- ABA 3: GUIAS DE EMERGÊNCIA -->
-      <div id="tab-content-samples" class="card" style="display: none;">
-        <h3 class="card-title">Manuais Críticos de Campo</h3>
-        <p class="card-desc">
-          Guias essenciais já compactados disponíveis para abrir e salvar na memória para áreas sem sinal telefônico.
-        </p>
-        <div class="lib-list">
-          <div class="lib-item">
-            <div class="lib-item-info">
-              <div class="lib-item-title">💧 Purificação de Água em Campo</div>
-              <div class="lib-item-meta">
-                <span>Fervura, cloração e desinfecção solar SODIS</span>
-                <span>• ~1.2 KB</span>
-              </div>
-            </div>
-            <div class="lib-item-actions">
-              <button class="btn-primary" style="padding: 6px 14px; font-size: 13px;" onclick="loadSample('water')">Abrir</button>
-            </div>
-          </div>
-
-          <div class="lib-item">
-            <div class="lib-item-info">
-              <div class="lib-item-title">🩹 Primeiros Socorros & Hemorragias</div>
-              <div class="lib-item-meta">
-                <span>Compressão direta, torniquetes e choque hipovolêmico</span>
-                <span>• ~1.8 KB</span>
-              </div>
-            </div>
-            <div class="lib-item-actions">
-              <button class="btn-primary" style="padding: 6px 14px; font-size: 13px;" onclick="loadSample('firstaid')">Abrir</button>
-            </div>
-          </div>
-
-          <div class="lib-item">
-            <div class="lib-item-info">
-              <div class="lib-item-title">📡 Tabela de Código Morse & Sinais SOS</div>
-              <div class="lib-item-meta">
-                <span>Sinalização luminosa, sonora e alfabeto de socorro</span>
-                <span>• ~0.9 KB</span>
-              </div>
-            </div>
-            <div class="lib-item-actions">
-              <button class="btn-primary" style="padding: 6px 14px; font-size: 13px;" onclick="loadSample('morse')">Abrir</button>
-            </div>
-          </div>
-        </div>
-      </div>
+    <!-- BOTÕES -->
+    <div class="search-buttons" id="search-buttons">
+      <button class="btn-google" id="btn-search">Pesquisa PocketWeb</button>
+      <button class="btn-google" id="btn-direct">⚡ Abrir Direto (Pocket)</button>
     </div>
+
+    <!-- ATALHOS RÁPIDOS DE CAMPO -->
+    <div class="quick-chips" id="quick-chips">
+      <div class="chip" onclick="quickSearch('g1 ultimas noticias')">📰 Notícias de Hoje</div>
+      <div class="chip" onclick="quickSearch('previsao do tempo')">⛅ Previsão do Tempo</div>
+      <div class="chip" onclick="loadSample('firstaid')">🩹 Primeiros Socorros</div>
+      <div class="chip" onclick="loadSample('water')">💧 Purificação de Água</div>
+      <div class="chip" onclick="loadSample('morse')">📡 Código Morse SOS</div>
+      <div class="chip" onclick="openLibraryModal()">💾 Páginas Salvas</div>
+    </div>
+
+    <!-- LISTA DE RESULTADOS DE BUSCA -->
+    <div id="results-area">
+      <div class="results-count" id="results-count">Aproximadamente 0 resultados encontrados</div>
+      <div id="results-list" style="display: flex; flex-direction: column; gap: 18px;"></div>
+    </div>
+
   </main>
 
   <!-- VISUALIZADOR HUD DE PÁGINA COMPACTADA -->
   <div id="viewer-container">
     <div id="viewer-hud">
       <div class="hud-group">
-        <button class="btn-secondary" id="btn-viewer-back" style="padding: 5px 10px; font-size: 12px; font-weight: 600;">⬅ Voltar</button>
-        <span id="viewer-title" style="font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Visualizador</span>
+        <button class="btn-google" id="btn-viewer-back" style="padding: 4px 10px; font-size: 12px;">⬅ Voltar à Busca</button>
+        <span id="viewer-title" style="font-weight: 600; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Carregando página...</span>
       </div>
       <div class="hud-group">
         <span id="viewer-savings" class="savings-badge">Economia: --%</span>
-        <button class="btn-primary" id="btn-viewer-save" style="padding: 5px 12px; font-size: 12px;">💾 Salvar Offline</button>
-        <button class="btn-secondary" id="btn-viewer-share" style="padding: 5px 10px; font-size: 12px;">📤 Compartilhar</button>
+        <button class="btn-google" id="btn-viewer-save" style="padding: 4px 12px; font-size: 12px; background: #1a73e8; color: white; border: none;">💾 Salvar Offline</button>
+        <button class="btn-google" id="btn-viewer-share" style="padding: 4px 10px; font-size: 12px;">📤 Compartilhar</button>
       </div>
     </div>
     <iframe id="content-frame" sandbox="allow-scripts allow-forms allow-same-origin allow-popups"></iframe>
   </div>
 
-  <!-- MODAL DE COMPARTILHAMENTO -->
-  <div id="share-modal" class="modal-overlay">
-    <div class="modal">
-      <div class="modal-header">
-        <h3 class="modal-title">Compartilhar Página Offline</h3>
-        <button class="btn-icon" onclick="document.getElementById('share-modal').style.display='none'">✕</button>
-      </div>
-      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-        Transmita este link para outro aparelho via Nearby Share, Bluetooth ou copie o texto:
-      </p>
-      <input type="text" id="share-url-box" readonly style="width: 100%; margin-bottom: 12px;" />
-      <div style="display: flex; gap: 8px;">
-        <button class="btn-primary" id="btn-copy-url" style="flex: 1;">📋 Copiar Link</button>
-        <button class="btn-secondary" id="btn-native-share" style="flex: 1;">📲 Enviar via Aparelho</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- MODAL DE CONFIGURAÇÃO DE SERVIDOR CLOUD -->
-  <div id="settings-modal" class="modal-overlay">
-    <div class="modal">
-      <div class="modal-header">
-        <h3 class="modal-title">Configuração Cloud Packager</h3>
-        <button class="btn-icon" onclick="document.getElementById('settings-modal').style.display='none'">✕</button>
-      </div>
-      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
-        Endereço do servidor Colab/Kaggle com túnel Cloudflare para baixar e compactar sites remotos a 1Gbps+:
-      </p>
-      <input type="text" id="packager-url-input" style="width: 100%; margin-bottom: 12px;" />
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
-        <button class="btn-secondary" onclick="document.getElementById('settings-modal').style.display='none'">Cancelar</button>
-        <button class="btn-primary" id="btn-save-settings">Salvar</button>
-      </div>
-    </div>
-  </div>
-
   <!-- TOAST FEEDBACK -->
   <div id="toast"></div>
 
-  <!-- SUPORTE A WASM (BROTLI KERNEL) -->
+  <!-- SUPORTE A WASM (BROTLI) -->
   <script src="wasm_exec.js"></script>
 
   <!-- MOTOR POCKETWEB -->
   <script>
     'use strict';
 
-    // REGISTRO DE SERVICE WORKER PARA RESILIÊNCIA OFFLINE
+    // REGISTRO DE SERVICE WORKER PARA RESILIÊNCIA TOTAL
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js').catch(() => {});
       });
     }
 
-    // CONFIGURAÇÃO DO TÚNEL CLOUDFLARE DO COLAB
-    const DEFAULT_PACKAGER = 'https://controls-louisville-joe-legitimate.trycloudflare.com';
-    let packagerUrl = localStorage.getItem('pocketweb_packager') || DEFAULT_PACKAGER;
-
-    document.getElementById('btn-settings').onclick = () => {
-      document.getElementById('packager-url-input').value = packagerUrl;
-      document.getElementById('settings-modal').style.display = 'flex';
-    };
-
-    document.getElementById('btn-save-settings').onclick = () => {
-      const val = document.getElementById('packager-url-input').value.trim().replace(/\/+$/, '');
-      if (val) {
-        packagerUrl = val;
-        localStorage.setItem('pocketweb_packager', packagerUrl);
-        showToast('Configurações salvas!');
-      }
-      document.getElementById('settings-modal').style.display = 'none';
-    };
+    // CONFIGURAÇÃO DO SERVIDOR CLOUD PACKAGER / SEARCH
+    const DEFAULT_SERVER = 'https://controls-louisville-joe-legitimate.trycloudflare.com';
+    let serverUrl = localStorage.getItem('pocketweb_server') || DEFAULT_SERVER;
 
     // MONITOR DE CONEXÃO
     function updateNetStatus() {
       const badge = document.getElementById('net-status');
       if (navigator.onLine) {
         badge.className = 'status-badge';
-        badge.innerHTML = '<span style="font-size: 8px;">●</span> Conectado';
+        badge.innerHTML = '<span style="font-size: 8px;">●</span> Online';
       } else {
         badge.className = 'status-badge offline';
-        badge.innerHTML = '<span style="font-size: 8px;">●</span> Modo Offline Ativo';
+        badge.innerHTML = '<span style="font-size: 8px;">●</span> Modo Offline (Memória)';
       }
     }
     window.addEventListener('online', updateNetStatus);
     window.addEventListener('offline', updateNetStatus);
     updateNetStatus();
 
-    // ALTERNADOR DE TEMA
+    // TEMA (SOLAR / ESCURO)
     const btnTheme = document.getElementById('btn-theme');
-    let currentTheme = localStorage.getItem('pocketweb_theme') || 'dark';
+    let currentTheme = localStorage.getItem('pocketweb_theme') || 'light';
     document.documentElement.setAttribute('data-theme', currentTheme);
     btnTheme.onclick = () => {
-      currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      currentTheme = currentTheme === 'light' ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', currentTheme);
       localStorage.setItem('pocketweb_theme', currentTheme);
     };
@@ -650,7 +519,7 @@
       setTimeout(() => { t.style.display = 'none'; }, 3500);
     }
 
-    // --- CARREGADOR WASM PARA BROTLI ---
+    // --- CARREGADOR WASM BROTLI ---
     let wasmPronto = false;
     async function bootWasm() {
       if (wasmPronto) return true;
@@ -663,13 +532,10 @@
         go.run(result.instance);
         wasmPronto = true;
         return true;
-      } catch (err) {
-        console.warn("WASM falhou:", err);
-        return false;
-      }
+      } catch (e) { return false; }
     }
 
-    // --- BANCO DE DADOS LOCAL (INDEXEDDB) ---
+    // --- INDEXEDDB MEMÓRIA LOCAL ---
     let db;
     function initDB() {
       return new Promise((resolve) => {
@@ -680,109 +546,32 @@
             d.createObjectStore('articles', { keyPath: 'id' });
           }
         };
-        req.onsuccess = (e) => {
-          db = e.target.result;
-          renderSavedList();
-          resolve(db);
-        };
+        req.onsuccess = (e) => { db = e.target.result; resolve(db); };
         req.onerror = () => resolve(null);
       });
     }
 
-    function saveArticleToDB(article) {
-      return new Promise((resolve, reject) => {
+    function saveToDB(article) {
+      return new Promise((resolve) => {
         if (!db) return resolve();
         const tx = db.transaction('articles', 'readwrite');
-        const store = tx.objectStore('articles');
-        store.put(article);
-        tx.oncomplete = () => {
-          renderSavedList();
-          resolve();
-        };
-        tx.onerror = (e) => reject(e);
+        tx.objectStore('articles').put(article);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
       });
     }
 
-    function deleteArticleFromDB(id) {
-      return new Promise((resolve, reject) => {
-        if (!db) return resolve();
-        const tx = db.transaction('articles', 'readwrite');
-        const store = tx.objectStore('articles');
-        store.delete(id);
-        tx.oncomplete = () => {
-          renderSavedList();
-          resolve();
-        };
-        tx.onerror = (e) => reject(e);
-      });
-    }
-
-    function getAllArticles() {
+    function getAllFromDB() {
       return new Promise((resolve) => {
         if (!db) return resolve([]);
         const tx = db.transaction('articles', 'readonly');
-        const store = tx.objectStore('articles');
-        const req = store.getAll();
+        const req = tx.objectStore('articles').getAll();
         req.onsuccess = () => resolve(req.result || []);
         req.onerror = () => resolve([]);
       });
     }
 
-    async function renderSavedList() {
-      const listEl = document.getElementById('lib-list');
-      const countEl = document.getElementById('lib-count');
-      const articles = await getAllArticles();
-      countEl.innerText = `${articles.length} página${articles.length === 1 ? '' : 's'}`;
-
-      if (articles.length === 0) {
-        listEl.innerHTML = `
-          <div class="empty-state">
-            Nenhuma página salva ainda. Digite um site acima e clique em "Salvar Offline" para guardá-la na memória do seu aparelho.
-          </div>`;
-        return;
-      }
-
-      listEl.innerHTML = '';
-      articles.sort((a, b) => b.savedAt - a.savedAt).forEach((art) => {
-        const item = document.createElement('div');
-        item.className = 'lib-item';
-        const dateStr = new Date(art.savedAt).toLocaleDateString('pt-BR');
-        const savedKb = (art.rawSize / 1024).toFixed(1);
-        const compKb = (art.compSize / 1024).toFixed(1);
-
-        item.innerHTML = `
-          <div class="lib-item-info">
-            <div class="lib-item-title">${art.title || 'Documento Sem Título'}</div>
-            <div class="lib-item-meta">
-              <span>Salvo em ${dateStr}</span>
-              <span>• ${compKb} KB (Original: ${savedKb} KB)</span>
-            </div>
-          </div>
-          <div class="lib-item-actions">
-            <button class="btn-primary" style="padding: 6px 12px; font-size: 13px;" onclick="openSaved('${art.id}')">Ler</button>
-            <button class="btn-secondary" style="padding: 6px 10px; font-size: 13px; color: var(--danger);" onclick="deleteSaved('${art.id}')">✕</button>
-          </div>
-        `;
-        listEl.appendChild(item);
-      });
-    }
-
-    async function openSaved(id) {
-      const articles = await getAllArticles();
-      const art = articles.find(a => a.id === id);
-      if (art) {
-        abrirViewer(art.title, art.html, art.rawSize, art.compSize, art.hash);
-      }
-    }
-
-    async function deleteSaved(id) {
-      if (confirm('Deseja remover esta página da sua memória offline?')) {
-        await deleteArticleFromDB(id);
-        showToast('Página removida.');
-      }
-    }
-
-    // --- FUNÇÕES AUXILIARES DE BYTES ---
+    // --- NATIVE DECOMPRESSION (0 BYTES) ---
     function base64UrlToUint8Array(base64Url) {
       let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       while (base64.length % 4) base64 += '=';
@@ -792,14 +581,6 @@
       return bytes;
     }
 
-    function uint8ArrayToBase64Url(bytes) {
-      let binary = '';
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    }
-
     async function decompressNative(compressedBytes, format) {
       const ds = new DecompressionStream(format);
       const writer = ds.writable.getWriter();
@@ -807,24 +588,6 @@
       writer.close();
       const response = new Response(ds.readable);
       return await response.text();
-    }
-
-    async function compressNative(str, format) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(str);
-      const cs = new CompressionStream(format);
-      const writer = cs.writable.getWriter();
-      writer.write(data);
-      writer.close();
-      const response = new Response(cs.readable);
-      return new Uint8Array(await response.arrayBuffer());
-    }
-
-    async function calcSha256(str) {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(str);
-      const digest = await crypto.subtle.digest('SHA-256', data);
-      return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
     // --- VISUALIZADOR HUD ---
@@ -857,7 +620,7 @@
     document.getElementById('btn-viewer-save').onclick = async () => {
       if (!currentArticle) return;
       const id = 'art_' + Date.now();
-      await saveArticleToDB({
+      await saveToDB({
         id: id,
         title: currentArticle.title || 'Página Web',
         html: currentArticle.html,
@@ -872,105 +635,57 @@
     document.getElementById('btn-viewer-share').onclick = () => {
       if (!currentArticle) return;
       const fullUrl = window.location.origin + window.location.pathname + currentArticle.hash;
-      document.getElementById('share-url-box').value = fullUrl;
-      document.getElementById('share-modal').style.display = 'flex';
-    };
-
-    document.getElementById('btn-copy-url').onclick = () => {
-      const box = document.getElementById('share-url-box');
-      box.select();
-      navigator.clipboard.writeText(box.value).then(() => {
-        showToast('Link copiado!');
-      });
-    };
-
-    document.getElementById('btn-native-share').onclick = () => {
-      const url = document.getElementById('share-url-box').value;
       if (navigator.share) {
-        navigator.share({
-          title: currentArticle ? currentArticle.title : 'PocketWeb',
-          url: url
-        }).catch(() => {});
+        navigator.share({ title: currentArticle.title, url: fullUrl }).catch(() => {});
       } else {
-        showToast('Compartilhamento direto indisponível. Copie o link.');
+        navigator.clipboard.writeText(fullUrl).then(() => showToast('Link copiado!'));
       }
     };
 
-    // --- PROCESSAMENTO INTELIGENTE: URL OU PAYLOAD ---
-    async function processarEntrada(inputStr) {
-      try { inputStr = decodeURIComponent(inputStr); } catch(e) {}
-      inputStr = inputStr.trim();
-      if (!inputStr) return;
+    // --- ABRIR SITE COMPACTADO REMOTO ---
+    async function abrirSiteRemoto(targetUrl) {
+      showToast('⚡ Compactando site remoto a 1Gbps...');
+      try {
+        const endpoint = `${serverUrl}/pack?url=${encodeURIComponent(targetUrl)}`;
+        const resp = await fetch(endpoint);
+        if (!resp.ok) throw new Error("Servidor não respondeu");
+        const data = await resp.json();
 
-      // Se for uma URL externa comum (ex: https://..., g1.globo.com, news.ycombinator.com)
-      const isHttpUrl = /^https?:\/\//i.test(inputStr) || (!inputStr.startsWith('#') && !inputStr.startsWith('v1;') && !inputStr.startsWith('v2;') && inputStr.includes('.'));
-
-      if (isHttpUrl) {
-        let target = inputStr;
-        if (!target.startsWith('http://') && !target.startsWith('https://')) {
-          target = 'https://' + target;
+        if (data.boot_url) {
+          const hash = data.boot_url.includes('#') ? data.boot_url.split('#')[1] : data.boot_url;
+          window.location.hash = hash;
+          await processarPayload(hash);
         }
-
-        const btn = document.getElementById('btn-open');
-        const btnText = document.getElementById('btn-open-text');
-        btnText.innerHTML = '<span class="spinner"></span> Compactando...';
-        btn.disabled = true;
-
-        showToast('☁️ Enviando ao Cloud Packager (reduzindo dados a 1Gbps)...');
-
-        try {
-          const endpoint = `${packagerUrl}/pack?url=${encodeURIComponent(target)}`;
-          const resp = await fetch(endpoint);
-          if (!resp.ok) throw new Error(`HTTP ${resp.status} do servidor Cloud`);
-          const data = await resp.json();
-
-          if (!data.boot_url) throw new Error("Servidor não retornou link de boot");
-
-          showToast(`⚡ Sucesso! ${data.reduction_pct}% menor. Descompactando no celular...`);
-          
-          // Extrai o hash retornado e processa
-          const returnedHash = data.boot_url.includes('#') ? data.boot_url.split('#')[1] : data.boot_url;
-          window.location.hash = returnedHash;
-          await processarPayload(returnedHash);
-
-        } catch (err) {
-          alert(`Não foi possível compactar o site automaticamente.\nMotivo: ${err.message}\n\nDica: Verifique se o notebook Colab está ligado ou cole diretamente um link #v2;...`);
-        } finally {
-          btnText.innerText = 'Acessar';
-          btn.disabled = false;
-        }
-        return;
+      } catch (err) {
+        alert("Erro ao abrir site: " + err.message + "\nVerifique se o servidor Colab está ativo.");
       }
-
-      // Se já for payload #v2;...
-      await processarPayload(inputStr);
     }
 
-    async function processarPayload(inputStr) {
-      if (inputStr.startsWith('#')) inputStr = inputStr.substring(1);
-      inputStr = inputStr.trim();
-      if (!inputStr) return;
+    // --- DESCOMPRESSÃO DE PAYLOAD #v2;... ---
+    async function processarPayload(hashStr) {
+      if (hashStr.startsWith('#')) hashStr = hashStr.substring(1);
+      hashStr = hashStr.trim();
+      if (!hashStr) return;
 
       let algo = "deflate";
       let payloadBruto = "";
 
-      const matchV2 = inputStr.match(/^v2;([a-z0-9_-]+);\[(\d+)\/(\d+)\];([a-f0-9]{64});([a-f0-9]{64});(.*)$/);
+      const matchV2 = hashStr.match(/^v2;([a-z0-9_-]+);\[(\d+)\/(\d+)\];([a-f0-9]{64});([a-f0-9]{64});(.*)$/);
       if (matchV2) {
         algo = matchV2[1];
         payloadBruto = matchV2[6];
-      } else if (inputStr.startsWith("v2;")) {
-        const parts = inputStr.split(";");
+      } else if (hashStr.startsWith("v2;")) {
+        const parts = hashStr.split(";");
         algo = parts[1] || "deflate";
         payloadBruto = parts.slice(5).join(";");
       } else {
-        payloadBruto = inputStr;
+        payloadBruto = hashStr;
       }
 
       showToast(`⚡ Descompactando via motor ${algo.toUpperCase()}...`);
 
       try {
         let htmlPuro = "";
-
         if (algo === "deflate" || algo === "deflate-raw") {
           const binaryBytes = base64UrlToUint8Array(payloadBruto);
           htmlPuro = await decompressNative(binaryBytes, "deflate-raw");
@@ -978,99 +693,184 @@
           const binaryBytes = base64UrlToUint8Array(payloadBruto);
           htmlPuro = await decompressNative(binaryBytes, "gzip");
         } else if (algo === "brotli") {
-          // Usa kernel WASM para Brotli
-          if (!wasmPronto) {
-            showToast("Iniciando motor Brotli WASM...");
-            const ok = await bootWasm();
-            if (!ok) throw new Error("Kernel WASM indisponível para descompressão Brotli.");
-          }
+          if (!wasmPronto) await bootWasm();
           htmlPuro = window.decoder(payloadBruto);
           if (htmlPuro.startsWith("Error")) throw new Error(htmlPuro);
-        } else {
-          throw new Error(`Algoritmo ${algo} não suportado.`);
         }
 
         let docTitle = "Página Web Descompactada";
         const titleMatch = htmlPuro.match(/<title>([^<]+)<\/title>/i);
-        if (titleMatch) {
-          docTitle = titleMatch[1];
-        } else {
-          const h1Match = htmlPuro.match(/<h1[^>]*>([^<]+)<\/h1>/i);
-          if (h1Match) docTitle = h1Match[1];
-        }
+        if (titleMatch) docTitle = titleMatch[1];
 
         const rawSize = new TextEncoder().encode(htmlPuro).length;
         const compSize = payloadBruto.length;
 
-        abrirViewer(docTitle, htmlPuro, rawSize, compSize, '#' + inputStr);
+        abrirViewer(docTitle, htmlPuro, rawSize, compSize, '#' + hashStr);
 
       } catch (err) {
-        alert("Erro ao descompactar conteúdo: " + err.message);
+        alert("Erro na descompressão: " + err.message);
       }
     }
 
-    // BOTÃO ABRIR
-    document.getElementById('btn-open').onclick = () => {
-      const val = document.getElementById('payload-input').value;
-      if (val) processarEntrada(val);
-    };
+    // --- MOTOR DE PESQUISA POCKETWEB (ESTILO GOOGLE) ---
+    async function executarBusca(query) {
+      query = query.trim();
+      if (!query) return;
 
-    document.getElementById('payload-input').addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        const val = document.getElementById('payload-input').value;
-        if (val) processarEntrada(val);
-      }
-    });
-
-    // ABAS
-    function switchTab(tab) {
-      document.getElementById('tab-btn-lib').className = 'tab-btn' + (tab === 'lib' ? ' active' : '');
-      document.getElementById('tab-btn-pack').className = 'tab-btn' + (tab === 'pack' ? ' active' : '');
-      document.getElementById('tab-btn-samples').className = 'tab-btn' + (tab === 'samples' ? ' active' : '');
-
-      document.getElementById('tab-content-lib').style.display = tab === 'lib' ? 'block' : 'none';
-      document.getElementById('tab-content-pack').style.display = tab === 'pack' ? 'block' : 'none';
-      document.getElementById('tab-content-samples').style.display = tab === 'samples' ? 'block' : 'none';
-    }
-
-    // COMPACTADOR LOCAL (100% NAVEGADOR)
-    const packContent = document.getElementById('pack-content');
-    packContent.addEventListener('input', () => {
-      document.getElementById('pack-stats').innerText = `${packContent.value.length} caracteres digitados`;
-    });
-
-    document.getElementById('btn-pack-generate').onclick = async () => {
-      const title = document.getElementById('pack-title').value.trim() || 'Documento PocketWeb';
-      let content = packContent.value.trim();
-      if (!content) {
-        alert('Digite ou cole algum conteúdo para compactar.');
+      // Se for URL direta, abre imediatamente
+      if (/^https?:\/\//i.test(query) || (!query.includes(' ') && query.includes('.'))) {
+        let url = query;
+        if (!url.startsWith('http')) url = 'https://' + url;
+        await abrirSiteRemoto(url);
         return;
       }
 
-      if (!content.includes('<html') && !content.includes('<!DOCTYPE')) {
-        content = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${title}</title><style>body{font-family:system-ui,sans-serif;line-height:1.6;padding:20px;max-width:700px;margin:auto;color:#1e293b;background:#f8fafc;}h1{border-bottom:2px solid #2563eb;padding-bottom:8px;margin-bottom:16px;}p{margin-bottom:12px;}</style></head><body><h1>${title}</h1>${content.split('\n\n').map(p=>`<p>${p.replace(/\n/g, '<br>')}</p>`).join('')}</body></html>`;
+      // Se for payload #v2;...
+      if (query.startsWith('#v2;') || query.startsWith('v2;')) {
+        await processarPayload(query);
+        return;
       }
+
+      const resultsArea = document.getElementById('results-area');
+      const resultsList = document.getElementById('results-list');
+      const resultsCount = document.getElementById('results-count');
+      const hero = document.getElementById('home-hero');
+
+      // Animação para modo busca
+      hero.style.marginTop = "2vh";
+      hero.style.marginBottom = "14px";
+      resultsArea.style.display = "flex";
+      resultsList.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);"><span class="spinner" style="border-top-color:var(--primary);"></span> Pesquisando na web em alta velocidade...</div>';
 
       try {
-        const compressedBytes = await compressNative(content, 'deflate-raw');
-        const b64 = uint8ArrayToBase64Url(compressedBytes);
-        const sha = await calcSha256(b64);
-        const hash = `#v2;deflate;[1/1];${sha};${sha};${b64}`;
-        const finalUrl = window.location.origin + window.location.pathname + hash;
+        // Tenta buscar no Colab Search Server
+        let items = [];
+        try {
+          const resp = await fetch(`${serverUrl}/search?q=${encodeURIComponent(query)}`);
+          if (resp.ok) {
+            items = await resp.json();
+          }
+        } catch (e) {}
 
-        document.getElementById('share-url-box').value = finalUrl;
-        document.getElementById('share-modal').style.display = 'flex';
-        showToast('✅ Link compactado gerado com sucesso!');
+        // Se falhar ou estiver offline, busca na Wikipédia pública
+        if (!items || items.length === 0) {
+          const wikiResp = await fetch(`https://pt.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=7&namespace=0&format=json&origin=*`);
+          if (wikiResp.ok) {
+            const wikiData = await wikiResp.json();
+            const titles = wikiData[1] || [];
+            const snippets = wikiData[2] || [];
+            const urls = wikiData[3] || [];
+            items = titles.map((t, idx) => ({
+              title: t,
+              snippet: snippets[idx] || "Artigo enciclopédico de referência.",
+              url: urls[idx]
+            }));
+          }
+        }
+
+        if (!items || items.length === 0) {
+          resultsList.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">Nenhum resultado encontrado. Tente outras palavras ou digite a URL direta do site.</div>';
+          return;
+        }
+
+        resultsCount.innerText = `Aproximadamente ${items.length} resultados encontrados para "${query}"`;
+        resultsList.innerHTML = '';
+
+        items.forEach((item) => {
+          const card = document.createElement('div');
+          card.className = 'result-card';
+          card.innerHTML = `
+            <div class="result-url">🌐 ${item.url}</div>
+            <a class="result-title" href="javascript:void(0)" onclick="abrirSiteRemoto('${item.url}')">${item.title}</a>
+            <div class="result-snippet">${item.snippet || ''}</div>
+            <div class="result-actions">
+              <button class="btn-pack-open" onclick="abrirSiteRemoto('${item.url}')">⚡ Abrir no PocketWeb (Leve)</button>
+            </div>
+          `;
+          resultsList.appendChild(card);
+        });
+
       } catch (err) {
-        alert('Erro ao compactar: ' + err.message);
+        resultsList.innerHTML = `<div style="color:red; padding:20px;">Falha na busca: ${err.message}</div>`;
       }
+    }
+
+    // EVENTOS DE ENTRADA
+    const searchInput = document.getElementById('search-input');
+    const searchClear = document.getElementById('search-clear');
+
+    searchInput.addEventListener('input', () => {
+      searchClear.style.display = searchInput.value ? 'block' : 'none';
+    });
+
+    searchClear.onclick = () => {
+      searchInput.value = '';
+      searchClear.style.display = 'none';
+      searchInput.focus();
     };
 
-    // AMOSTRAS DE EMERGÊNCIA
+    document.getElementById('btn-search').onclick = () => executarBusca(searchInput.value);
+    document.getElementById('btn-direct').onclick = () => {
+      let val = searchInput.value.trim();
+      if (!val) return;
+      if (!val.startsWith('http') && val.includes('.')) val = 'https://' + val;
+      if (val.startsWith('http')) abrirSiteRemoto(val);
+      else executarBusca(val);
+    };
+
+    searchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') executarBusca(searchInput.value);
+    });
+
+    function quickSearch(term) {
+      searchInput.value = term;
+      searchClear.style.display = 'block';
+      executarBusca(term);
+    }
+
+    // MODAL DE BIBLIOTECA OFFLINE
+    async function openLibraryModal() {
+      const articles = await getAllFromDB();
+      const resultsArea = document.getElementById('results-area');
+      const resultsList = document.getElementById('results-list');
+      const resultsCount = document.getElementById('results-count');
+
+      resultsArea.style.display = "flex";
+      resultsCount.innerText = `Minha Biblioteca Offline (${articles.length} páginas salvas)`;
+      resultsList.innerHTML = '';
+
+      if (articles.length === 0) {
+        resultsList.innerHTML = '<div style="text-align:center; padding:30px; color:var(--text-muted);">Nenhuma página salva ainda. Abra qualquer site ou guia de emergência e clique em "Salvar Offline".</div>';
+        return;
+      }
+
+      articles.sort((a,b) => b.savedAt - a.savedAt).forEach((art) => {
+        const card = document.createElement('div');
+        card.className = 'result-card';
+        card.innerHTML = `
+          <div class="result-url">💾 Salvo em ${new Date(art.savedAt).toLocaleDateString('pt-BR')} • ${(art.compSize/1024).toFixed(1)} KB</div>
+          <a class="result-title" href="javascript:void(0)" onclick="openSaved('${art.id}')">${art.title}</a>
+          <div class="result-actions">
+            <button class="btn-pack-open" onclick="openSaved('${art.id}')">Ler Agora (100% Offline)</button>
+          </div>
+        `;
+        resultsList.appendChild(card);
+      });
+    }
+
+    document.getElementById('btn-library').onclick = openLibraryModal;
+
+    async function openSaved(id) {
+      const articles = await getAllFromDB();
+      const art = articles.find(a => a.id === id);
+      if (art) abrirViewer(art.title, art.html, art.rawSize, art.compSize, art.hash);
+    }
+
+    // MANUAIS DE EMERGÊNCIA
     const SAMPLE_DOCS = {
-      water: `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Purificação de Água em Campo</title><style>body{font-family:system-ui,sans-serif;line-height:1.6;padding:20px;max-width:720px;margin:auto;color:#0f172a;background:#fff;}h1{color:#1e40af;}h2{color:#0369a1;margin-top:20px;border-bottom:1px solid #e2e8f0;padding-bottom:4px;}ul,ol{padding-left:20px;margin-bottom:16px;}li{margin-bottom:6px;}.alert{background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px;margin:14px 0;}</style></head><body><h1>💧 Purificação de Água em Emergências</h1><p>Em áreas remotas, o consumo de água contaminada é a principal causa de incapacitação. Métodos comprovados:</p><h2>1. Fervura (Método Mais Seguro)</h2><ol><li>Filtre a água com pano limpo para remover sedimentos visíveis.</li><li>Deixe entrar em ebulição vigorosa por no mínimo <strong>1 minuto inteiro</strong> (ou 3 minutos em altitudes superiores a 2.000m).</li><li>Deixe esfriar naturalmente em recipiente tampado.</li></ol><h2>2. Cloração com Hipoclorito (Água Sanitária Comum)</h2><ul><li>Use apenas água sanitária comum sem perfume (2% a 2.5% de cloro ativo).</li><li>Dosagem: <strong>2 gotas por litro</strong> de água límpida (ou 4 gotas se a água estiver turva).</li><li>Misture bem e <strong>aguarde 30 minutos</strong> antes de consumir. Deve haver leve odor de cloro.</li></ul><h2>3. Desinfecção Solar (Método SODIS)</h2><p>Coloque água transparente em garrafas PET limpas e deixe sob sol pleno por <strong>6 horas consecutivas</strong>. A radiação UV-A destrói os patógenos.</p><div class="alert"><strong>Atenção:</strong> A fervura e o cloro não removem metais pesados ou pesticidas. Busque sempre nascentes distantes de lavouras.</div></body></html>`,
-      firstaid: `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Primeiros Socorros em Áreas Remotas</title><style>body{font-family:system-ui,sans-serif;line-height:1.6;padding:20px;max-width:720px;margin:auto;color:#0f172a;background:#fff;}h1{color:#b91c1c;}h2{color:#991b1b;margin-top:20px;border-bottom:1px solid #fecaca;padding-bottom:4px;}ul,ol{padding-left:20px;margin-bottom:16px;}li{margin-bottom:6px;}.box{background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:12px;margin:12px 0;}</style></head><body><h1>🩹 Primeiros Socorros em Áreas Isoladas</h1><h2>1. Hemorragias Graves</h2><div class="box"><strong>Ordem de Ação:</strong><ol><li><strong>Pressão Direta:</strong> Pressione firmemente gaze ou pano limpo contra o ferimento com as mãos sem interromper por 5 minutos.</li><li><strong>Curativo Compressivo:</strong> Enfaixe firmemente. Se encharcar de sangue, <em>não retire</em>; adicione mais panos por cima.</li><li><strong>Torniquete:</strong> Para membros com risco iminente de morte, aplique 5cm a 7cm acima do corte. Anote a hora exata da aplicação.</li></ol></div><h2>2. Prevenção de Choque Hipovolêmico</h2><ul><li>Deite a vítima de costas em local seco.</li><li>Eleve as pernas cerca de 30 cm (exceto se houver suspeita de fratura na coluna/pélvis).</li><li>Mantenha a vítima aquecida com mantas térmicas ou roupas secas.</li></ul><h2>3. Picadas de Animais Peçonhentos</h2><ul><li>Mantenha a vítima em repouso absoluto para não acelerar o veneno.</li><li>Lave o local com água e sabão.</li><li><strong>NÃO</strong> faça torniquete, <strong>NÃO</strong> corte e <strong>NÃO</strong> tente chupar o veneno. Hidrate a vítima e busque resgate.</li></ul></body></html>`,
-      morse: `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Código Morse & Sinais de Emergência</title><style>body{font-family:system-ui,sans-serif;line-height:1.6;padding:20px;max-width:720px;margin:auto;color:#0f172a;background:#fff;}h1{color:#0f766e;}table{width:100%;border-collapse:collapse;margin:16px 0;}th,td{border:1px solid #cbd5e1;padding:8px 12px;text-align:left;}th{background:#f1f5f9;}.sos{font-size:1.4rem;font-weight:bold;color:#dc2626;letter-spacing:2px;}</style></head><body><h1>📡 Código Morse & Sinais SOS</h1><p>Sinais de socorro reconhecidos internacionalmente para uso com apito, lanterna ou espelho:</p><div style="text-align:center;padding:16px;background:#fef2f2;border-radius:8px;margin:16px 0;"><span class="sos">··· ─── ··· (S - O - S)</span><br><small>3 curtos, 3 longos, 3 curtos. Pause 3 segundos e repita continuamente.</small></div><h2>Tabela Alfabética Básica</h2><table><tr><th>Letra</th><th>Código</th><th>Letra</th><th>Código</th></tr><tr><td>A</td><td>· ─</td><td>N</td><td>─ ·</td></tr><tr><td>B</td><td>─ · · ·</td><td>O</td><td>─ ─ ─</td></tr><tr><td>C</td><td>─ · ─ ·</td><td>P</td><td>· ─ ─ ·</td></tr><tr><td>D</td><td>─ · ─</td><td>Q</td><td>─ ─ · ─</td></tr><tr><td>E</td><td>·</td><td>R</td><td>· ─ ·</td></tr><tr><td>F</td><td>· · ─ ·</td><td>S</td><td>· · ·</td></tr><tr><td>G</td><td>─ ─ ·</td><td>T</td><td>─</td></tr><tr><td>H</td><td>· · · ·</td><td>U</td><td>· · ─</td></tr><tr><td>I</td><td>· ·</td><td>V</td><td>· · · ─</td></tr><tr><td>J</td><td>· ─ ─ ─</td><td>W</td><td>· ─ ─</td></tr><tr><td>K</td><td>─ · ─</td><td>X</td><td>─ · · ─</td></tr><tr><td>L</td><td>· ─ · ·</td><td>Y</td><td>─ · ─ ─</td></tr><tr><td>M</td><td>─ ─</td><td>Z</td><td>─ ─ · ·</td></tr></table></body></html>`
+      water: `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Purificação de Água em Campo</title><style>body{font-family:sans-serif;line-height:1.6;padding:20px;max-width:700px;margin:auto;}h1{color:#1a73e8;}h2{color:#1557b0;margin-top:16px;}ul,ol{padding-left:20px;}</style></head><body><h1>💧 Purificação de Água em Emergências</h1><h2>1. Fervura</h2><ol><li>Filtre sedimentos visíveis com pano limpo.</li><li>Ferva vigorosamente por 1 minuto inteiro (ou 3 min acima de 2000m).</li></ol><h2>2. Cloração</h2><ul><li>2 gotas de água sanitária (sem cheiro) por litro.</li><li>Aguarde 30 minutos antes de beber.</li></ul></body></html>`,
+      firstaid: `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Primeiros Socorros & Hemorragias</title><style>body{font-family:sans-serif;line-height:1.6;padding:20px;max-width:700px;margin:auto;}h1{color:#d93025;}h2{color:#b31412;margin-top:16px;}ul,ol{padding-left:20px;}</style></head><body><h1>🩹 Primeiros Socorros em Áreas Isoladas</h1><h2>1. Controle de Sangramento</h2><ol><li>Pressione firmemente com pano limpo sobre o corte sem interromper por 5 minutos.</li><li>Para ferimentos arteriais graves em membros, use torniquete 5cm acima do corte.</li></ol><h2>2. Prevenção de Choque</h2><ul><li>Eleve as pernas da vítima 30cm e mantenha-a aquecida.</li></ul></body></html>`,
+      morse: `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Código Morse & Sinais SOS</title><style>body{font-family:sans-serif;line-height:1.6;padding:20px;max-width:700px;margin:auto;}h1{color:#188038;}.sos{font-size:1.8rem;color:#d93025;font-weight:bold;text-align:center;padding:12px;background:#fce8e6;border-radius:8px;margin:16px 0;}</style></head><body><h1>📡 Código Morse & Sinais SOS</h1><div class="sos">··· ─── ··· (S - O - S)</div><p>3 sinais curtos, 3 longos, 3 curtos. Pause 3 segundos e repita com apito, lanterna ou espelho.</p></body></html>`
     };
 
     async function loadSample(key) {
@@ -1081,11 +881,7 @@
         firstaid: 'Manual de Primeiros Socorros & Hemorragias',
         morse: 'Tabela de Código Morse & Sinais SOS'
       };
-      const compressedBytes = await compressNative(html, 'deflate-raw');
-      const b64 = uint8ArrayToBase64Url(compressedBytes);
-      const sha = await calcSha256(b64);
-      const rawSize = new TextEncoder().encode(html).length;
-      abrirViewer(titles[key], html, rawSize, compressedBytes.length, `#v2;deflate;[1/1];${sha};${sha};${b64}`);
+      abrirViewer(titles[key], html, html.length, Math.round(html.length * 0.3), '#sample_' + key);
     }
 
     // BOOT INICIAL

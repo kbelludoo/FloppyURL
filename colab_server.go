@@ -200,6 +200,18 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"falha ao ler HTML: %v"}`, err), http.StatusInternalServerError)
 		return
 	}
+	// Injeta base href e interceptor de navegação contínua
+	htmlStr := string(rawHTML)
+	injection := fmt.Sprintf(`<base href="%s"><script>document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href&&!a.href.startsWith('javascript:')&&!a.href.startsWith('#')){e.preventDefault();window.parent.postMessage({type:'POCKET_NAV',url:a.href},'*');}});</script>`, targetURL)
+
+	if strings.Contains(strings.ToLower(htmlStr), "<head>") {
+		re := regexp.MustCompile(`(?i)<head>`)
+		htmlStr = re.ReplaceAllString(htmlStr, "<head>"+injection)
+	} else {
+		htmlStr = injection + htmlStr
+	}
+	rawHTML = []byte(htmlStr)
+
 	origSize := len(rawHTML)
 	minified, err := m.Bytes("text/html", rawHTML)
 	if err != nil {

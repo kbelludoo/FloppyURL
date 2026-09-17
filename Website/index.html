@@ -468,16 +468,17 @@
 
   </main>
 
-  <!-- VISUALIZADOR HUD DE PÁGINA COMPACTADA -->
+  <!-- VISUALIZADOR HUD DE PÁGINA COMPACTADA (NAVEGADOR COMPLETO) -->
   <div id="viewer-container">
     <div id="viewer-hud">
       <div class="hud-group">
-        <button class="btn-google" id="btn-viewer-back" style="padding: 4px 10px; font-size: 12px;">⬅ Voltar à Busca</button>
-        <span id="viewer-title" style="font-weight: 600; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Carregando página...</span>
+        <button class="btn-google" id="btn-viewer-back" style="padding: 4px 10px; font-size: 12px;">⬅ Busca</button>
+        <button class="btn-google" id="btn-viewer-reload" style="padding: 4px 8px; font-size: 12px;" title="Recarregar">🔄</button>
+        <input type="text" id="viewer-url-bar" style="background:#1f2937; border:1px solid #374151; color:#f3f4f6; border-radius:14px; padding:3px 12px; font-size:12px; width:280px; outline:none;" placeholder="https://..." />
       </div>
       <div class="hud-group">
         <span id="viewer-savings" class="savings-badge">Economia: --%</span>
-        <button class="btn-google" id="btn-viewer-save" style="padding: 4px 12px; font-size: 12px; background: #1a73e8; color: white; border: none;">💾 Salvar Offline</button>
+        <button class="btn-google" id="btn-viewer-save" style="padding: 4px 12px; font-size: 12px; background: #1a73e8; color: white; border: none;">💾 Salvar</button>
         <button class="btn-google" id="btn-viewer-share" style="padding: 4px 10px; font-size: 12px;">📤 Compartilhar</button>
       </div>
     </div>
@@ -608,17 +609,22 @@
       return await response.text();
     }
 
-    // --- VISUALIZADOR HUD ---
+    // --- VISUALIZADOR HUD E NAVEGADOR CONTÍNUO ---
     let currentArticle = null;
+    let currentRemoteURL = '';
 
-    function abrirViewer(title, html, rawSize, compSize, hash) {
-      currentArticle = { title, html, rawSize, compSize, hash };
+    function abrirViewer(title, html, rawSize, compSize, hash, targetUrl) {
+      if (targetUrl) currentRemoteURL = targetUrl;
+      currentArticle = { title, html, rawSize, compSize, hash, url: currentRemoteURL };
       const viewer = document.getElementById('viewer-container');
-      const titleEl = document.getElementById('viewer-title');
+      const urlBar = document.getElementById('viewer-url-bar');
       const savingsEl = document.getElementById('viewer-savings');
       const frame = document.getElementById('content-frame');
 
-      titleEl.innerText = title;
+      if (urlBar) {
+        urlBar.value = currentRemoteURL || title || 'PocketWeb';
+      }
+
       const pct = rawSize > 0 ? Math.round(((rawSize - compSize) / rawSize) * 100) : 0;
       savingsEl.innerText = `Economia: ${pct > 0 ? pct : 0}% (${(compSize/1024).toFixed(1)} KB vs ${(rawSize/1024).toFixed(1)} KB)`;
 
@@ -635,16 +641,43 @@
 
     document.getElementById('btn-viewer-back').onclick = fecharViewer;
 
+    document.getElementById('btn-viewer-reload').onclick = () => {
+      if (currentRemoteURL) abrirSiteRemoto(currentRemoteURL);
+    };
+
+    document.getElementById('viewer-url-bar').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        let val = document.getElementById('viewer-url-bar').value.trim();
+        if (val) {
+          if (!val.startsWith('http') && val.includes('.')) val = 'https://' + val;
+          if (val.startsWith('http')) abrirSiteRemoto(val);
+          else {
+            fecharViewer();
+            executarBusca(val);
+          }
+        }
+      }
+    });
+
+    // INTERCEPTADOR DE CLIQUES DE NAVEGAÇÃO CONTÍNUA DENTRO DO SITE
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'POCKET_NAV' && e.data.url) {
+        showToast('⚡ Navegando para o próximo link compactado...');
+        abrirSiteRemoto(e.data.url);
+      }
+    });
+
     document.getElementById('btn-viewer-save').onclick = async () => {
       if (!currentArticle) return;
       const id = 'art_' + Date.now();
       await saveToDB({
         id: id,
-        title: currentArticle.title || 'Página Web',
+        title: currentArticle.title || currentRemoteURL || 'Página Web',
         html: currentArticle.html,
         rawSize: currentArticle.rawSize,
         compSize: currentArticle.compSize,
         hash: currentArticle.hash,
+        url: currentRemoteURL,
         savedAt: Date.now()
       });
       showToast('✅ Salvo na Memória Offline com sucesso!');
@@ -662,6 +695,7 @@
 
     // --- ABRIR SITE COMPACTADO REMOTO ---
     async function abrirSiteRemoto(targetUrl) {
+      currentRemoteURL = targetUrl;
       showToast('⚡ Compactando site remoto a 1Gbps...');
       try {
         const endpoint = `${serverUrl}/pack?url=${encodeURIComponent(targetUrl)}`;
@@ -672,7 +706,7 @@
         if (data.boot_url) {
           const hash = data.boot_url.includes('#') ? data.boot_url.split('#')[1] : data.boot_url;
           window.location.hash = hash;
-          await processarPayload(hash);
+          await processarPayload(hash, targetUrl);
         }
       } catch (err) {
         alert("Erro ao abrir site: " + err.message + "\nVerifique se o servidor Colab está ativo.");
@@ -680,7 +714,7 @@
     }
 
     // --- DESCOMPRESSÃO DE PAYLOAD #v2;... ---
-    async function processarPayload(hashStr) {
+    async function processarPayload(hashStr, targetUrl) {
       if (hashStr.startsWith('#')) hashStr = hashStr.substring(1);
       hashStr = hashStr.trim();
       if (!hashStr) return;
@@ -723,7 +757,7 @@
         const rawSize = new TextEncoder().encode(htmlPuro).length;
         const compSize = payloadBruto.length;
 
-        abrirViewer(docTitle, htmlPuro, rawSize, compSize, '#' + hashStr);
+        abrirViewer(docTitle, htmlPuro, rawSize, compSize, '#' + hashStr, targetUrl);
 
       } catch (err) {
         alert("Erro na descompressão: " + err.message);

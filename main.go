@@ -122,7 +122,7 @@ func main() {
 	}
 
 	fmt.Println("==================================================")
-	fmt.Println(" FloppyURL v2.0 - Zero-Byte Attested Web Packager ")
+	fmt.Println(" FloppyURL v2.0 - checksum packager ")
 	fmt.Println("==================================================")
 
 	m := minify.New()
@@ -227,7 +227,7 @@ func main() {
 		manifest.FormatVersion = "v1"
 	}
 
-	fmt.Printf("[5/5] Gerando %d volume(s) RAID-0 (tamanho max por disco: %d bytes)...\n", totalDisks, *chunkSize)
+	fmt.Printf("[5/5] Gerando %d volume(s) concatenados (max %d chars por disco)...\n", totalDisks, *chunkSize)
 
 	var firstDiskContent string
 
@@ -291,15 +291,18 @@ func main() {
 	rulelBuf.WriteString("]\n")
 	_ = os.WriteFile(filepath.Join(*outputDir, "manifest.rulel"), rulelBuf.Bytes(), 0644)
 
+	boot := fmt.Sprintf("http://localhost:8080/?pin=%s#%s", rootHash, firstDiskContent)
 	fmt.Println("--------------------------------------------------")
 	fmt.Printf("CONCLUIDO COM SUCESSO!\n")
-	fmt.Printf("Raiz Criptografica SHA-256: %s\n", rootHash)
+	fmt.Printf("Raiz SHA-256 (checksum da montagem): %s\n", rootHash)
+	fmt.Printf("Pin (fora do fragmento): ?pin=%s\n", rootHash)
 	if totalDisks == 1 {
-		fmt.Printf("URL Direta de Boot:\nhttp://localhost:8080/#%s\n", firstDiskContent)
-		_ = os.WriteFile(filepath.Join(*outputDir, "boot_url.txt"), []byte("http://localhost:8080/#"+firstDiskContent), 0644)
+		fmt.Printf("URL de boot:\n%s\n", boot)
+		_ = os.WriteFile(filepath.Join(*outputDir, "boot_url.txt"), []byte(boot), 0644)
 	} else {
-		fmt.Printf("Payload dividido em %d disquetes na pasta '%s/'.\n", totalDisks, *outputDir)
-		fmt.Printf("Para rodar: abra http://localhost:8080/#%s e insira os proximos discos conforme solicitado.\n", firstDiskContent)
+		fmt.Printf("Payload dividido em %d volumes na pasta '%s/'.\n", totalDisks, *outputDir)
+		fmt.Printf("Abra %s e insira os proximos discos.\n", boot)
+		_ = os.WriteFile(filepath.Join(*outputDir, "boot_url.txt"), []byte(boot), 0644)
 	}
 	fmt.Println("==================================================")
 }

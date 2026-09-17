@@ -1,6 +1,6 @@
 # FloppyURL v2.0 - Makefile
 
-.PHONY: all build-wasm demo-brotli demo-deflate demo-defi demo-lin demo-lay demo-raid test serve clean
+.PHONY: all build-wasm demo-brotli demo-deflate demo-defi demo-lin demo-lay demo-raid test refute refute-live serve clean
 
 all: test demo-deflate
 
@@ -18,6 +18,14 @@ test:
 	python3 verify_linz_tc_p0.py
 	python3 verify_mempipe_p0.py
 	python3 verify_vs_original_p0.py
+	python3 refute_floppy.py
+
+# Tentar refutar as alegacoes do README contra o codigo real
+refute:
+	python3 refute_floppy.py
+
+refute-live:
+	python3 refute_boot_live.py
 
 # Compilar o kernel WebAssembly
 build-wasm:
@@ -50,9 +58,9 @@ demo-lay:
 	@echo "==> Gerando payload LAY DSL (Bytecode UI)..."
 	go run main.go lay_compiler.go -file examples/floppyurl_lay.lay -algo deflate -out-dir disks_lay
 
-# Gerar simulação RAID-0 multi-disco (chunks pequenos)
+# Gerar simulacao multi-volume (chunks pequenos)
 demo-raid:
-	@echo "==> Gerando payload RAID-0 particionado..."
+	@echo "==> Gerando payload multi-volume concatenado..."
 	go run main.go lay_compiler.go -file examples/demo.html -algo deflate -chunk-size 400 -out-dir disks_multidisk
 
 # Iniciar servidor local para testes
@@ -61,4 +69,4 @@ serve:
 	cd Website && python3 -m http.server 8080
 
 clean:
-	rm -rf disks disks_brotli disks_deflate disks_defi disks_lin disks_multidisk test_run_disks base64
+	rm -rf disks disks_brotli disks_deflate disks_defi disks_lin disks_multidisk test_run_disks test_run_refute base64

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -18,7 +19,7 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/tdewolff/minify/v2"
-	"github.com/tdewolff/minify/v2/html"
+	minifyHtml "github.com/tdewolff/minify/v2/html"
 )
 
 type PackResponse struct {
@@ -44,7 +45,7 @@ var m *minify.M
 
 func initMinifier() {
 	m = minify.New()
-	m.AddFunc("text/html", html.Minify)
+	m.AddFunc("text/html", minifyHtml.Minify)
 }
 
 func enableCORS(w *http.ResponseWriter) {
@@ -56,7 +57,7 @@ func enableCORS(w *http.ResponseWriter) {
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	enableCORS(&w)
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("<h1>⚡ PocketWeb Cloud Search & Packager Online</h1>"))
+	w.Write([]byte("<h1>⚡ PocketWeb Global Search & Packager Online</h1>"))
 }
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
@@ -71,16 +72,15 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := url.Values{}
-	data.Set("q", query)
-
-	req, err := http.NewRequest("POST", "https://lite.duckduckgo.com/lite/", strings.NewReader(data.Encode()))
+	// 1. Busca Global via Motor Web de Alta Densidade
+	endpoint := "https://www.bing.com/search?q=" + url.QueryEscape(query)
+	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"%v"}`, err), http.StatusInternalServerError)
 		return
 	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -100,37 +100,55 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	cleanTags := func(s string) string {
 		re := regexp.MustCompile(`<[^>]*>`)
 		s = re.ReplaceAllString(s, "")
+		s = html.UnescapeString(s)
 		s = strings.ReplaceAll(s, "&nbsp;", " ")
-		s = strings.ReplaceAll(s, "&amp;", "&")
-		s = strings.ReplaceAll(s, "&quot;", "\"")
 		return strings.TrimSpace(s)
 	}
 
-	trRegex := regexp.MustCompile(`<tr>([\s\S]*?)</tr>`)
-	aRegex := regexp.MustCompile(`<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>`)
+	decodeBingURL := func(raw string) string {
+		re := regexp.MustCompile(`(?:&amp;|&)u=a1([^&]+)`)
+		m := re.FindStringSubmatch(raw)
+		if len(m) > 1 {
+			b64 := m[1]
+			for len(b64)%4 != 0 {
+				b64 += "="
+			}
+			dec, err := base64.URLEncoding.DecodeString(b64)
+			if err == nil && len(dec) > 0 {
+				return string(dec)
+			}
+		}
+		return raw
+	}
 
-	trs := trRegex.FindAllStringSubmatch(body, -1)
-	var items []SearchItem
+	liRegex := regexp.MustCompile(`<li class="b_algo"[^>]*>([\s\S]*?)</li>`)
+	titleRegex := regexp.MustCompile(`<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a></h2>`)
+	snippetRegex := regexp.MustCompile(`<p[^>]*>([\s\S]*?)</p>`)
 
-	for i := 0; i < len(trs); i++ {
-		rowHTML := trs[i][1]
-		aMatches := aRegex.FindStringSubmatch(rowHTML)
-		if len(aMatches) > 2 {
-			rawHref := aMatches[1]
-			title := cleanTags(aMatches[2])
+	items := liRegex.FindAllStringSubmatch(body, -1)
+	var results []SearchItem
 
-			if !strings.Contains(rawHref, "duckduckgo.com") && (strings.HasPrefix(rawHref, "http://") || strings.HasPrefix(rawHref, "https://")) {
-				snippet := ""
-				if i+1 < len(trs) {
-					snippet = cleanTags(trs[i+1][1])
-				}
+	for _, item := range items {
+		liHTML := item[1]
+		tMatches := titleRegex.FindStringSubmatch(liHTML)
+		if len(tMatches) > 2 {
+			rawURL := tMatches[1]
+			actualURL := decodeBingURL(rawURL)
+			title := cleanTags(tMatches[2])
 
-				items = append(items, SearchItem{
+			snippet := ""
+			sMatches := snippetRegex.FindStringSubmatch(liHTML)
+			if len(sMatches) > 1 {
+				snippet = cleanTags(sMatches[1])
+			}
+
+			if title != "" && strings.HasPrefix(actualURL, "http") && !strings.Contains(actualURL, "bing.com") {
+				results = append(results, SearchItem{
 					Title:   title,
 					Snippet: snippet,
-					URL:     rawHref,
+					URL:     actualURL,
 				})
-				if len(items) >= 10 {
+				if len(results) >= 10 {
 					break
 				}
 			}
@@ -138,7 +156,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(items)
+	json.NewEncoder(w).Encode(results)
 }
 
 func packHandler(w http.ResponseWriter, r *http.Request) {
@@ -162,10 +180,9 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 
 	algo := r.URL.Query().Get("algo")
 	if algo == "" {
-		algo = "deflate" // Padrão: 0-byte native decompression no navegador
+		algo = "deflate"
 	}
 
-	// 1. Download do site alvo
 	client := &http.Client{}
 	req, _ := http.NewRequest("GET", targetURL, nil)
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -173,7 +190,7 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"falha ao baixar alvo: %v"}`, err), http.StatusBadGateway)
+		http.Error(w, fmt.Sprintf(`{"error":"falha ao baixar: %v"}`, err), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
@@ -184,14 +201,11 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	origSize := len(rawHTML)
-
-	// 2. Minificação AST de alta densidade
 	minified, err := m.Bytes("text/html", rawHTML)
 	if err != nil {
 		minified = rawHTML
 	}
 
-	// 3. Compressão
 	var compBytes []byte
 	if algo == "brotli" {
 		var buf bytes.Buffer
@@ -206,7 +220,6 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 		writer.Close()
 		compBytes = buf.Bytes()
 	} else {
-		// Deflate raw (padrão zero-wasm)
 		algo = "deflate"
 		var buf bytes.Buffer
 		writer, _ := flate.NewWriter(&buf, flate.BestCompression)
@@ -218,7 +231,6 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 	compSize := len(compBytes)
 	encoded := base64.RawURLEncoding.EncodeToString(compBytes)
 
-	// SHA-256 do texto Base64
 	sum := sha256.Sum256([]byte(encoded))
 	chunkSHA := hex.EncodeToString(sum[:])
 
@@ -231,7 +243,7 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 
 	res := PackResponse{
 		Status:          "success",
-		Engine:          "Go 1.22+ (PocketWeb High-Concurrency)",
+		Engine:          "Go 1.22+ (PocketWeb Global Engine)",
 		Algorithm:       algo,
 		OriginalURL:     targetURL,
 		OriginalBytes:   origSize,
@@ -253,6 +265,6 @@ func main() {
 	http.HandleFunc("/pack", packHandler)
 
 	port := "8080"
-	fmt.Printf("🚀 PocketWeb Server rodando na porta %s...\n", port)
+	fmt.Printf("🚀 PocketWeb Global Server online na porta %s...\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

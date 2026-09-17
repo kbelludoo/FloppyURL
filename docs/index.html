@@ -223,6 +223,7 @@
 
 		// --- PROCESSAMENTO DO DISCO COM INTEGRIDADE CRIPTOGRÁFICA ---
 		async function processarHash(hashStr) {
+			try { hashStr = decodeURIComponent(hashStr); } catch(e) {}
 			if (hashStr.startsWith('#')) hashStr = hashStr.substring(1);
 			hashStr = hashStr.trim();
 			if (!hashStr) return;
@@ -298,7 +299,22 @@
 				return;
 			}
 
-			// 3. Volume único não particionado
+			// 3. Se for V2 mas teve algum caractere estranho, tenta split direto
+			if (hashStr.startsWith("v2;")) {
+				const parts = hashStr.split(";");
+				if (parts.length >= 6) {
+					algoritmo = parts[1];
+					const chunkShaDeclarado = parts[3];
+					const payloadBruto = parts.slice(5).join(";");
+					totalDiscos = 1;
+					discos = [payloadBruto];
+					printLog("> PAYLOAD V2 RECUPERADO VIA SPLIT TOLERANTE.", "alerta");
+					verificarProgresso();
+					return;
+				}
+			}
+
+			// 4. Volume único não particionado (legado bruto)
 			discos = [hashStr];
 			totalDiscos = 1;
 			algoritmo = "brotli";

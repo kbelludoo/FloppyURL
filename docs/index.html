@@ -6,6 +6,23 @@
   <title>PocketWeb - Buscador e Navegador para Áreas Remotas</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#ffffff">
+  <script>
+    // Invalidação imediata de caches de versões anteriores
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(registrations) {
+        for (let registration of registrations) {
+          registration.unregister();
+        }
+      });
+    }
+    if ('caches' in window) {
+      caches.keys().then(function(names) {
+        for (let name of names) {
+          caches.delete(name);
+        }
+      });
+    }
+  </script>
   <style>
     :root {
       --bg: #ffffff;

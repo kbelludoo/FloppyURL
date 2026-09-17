@@ -137,7 +137,7 @@
       gap: 24px;
     }
 
-    /* CARD HERO */
+    /* CARD */
     .card {
       background: var(--surface);
       border: 1px solid var(--surface-border);
@@ -161,7 +161,7 @@
       line-height: 1.5;
     }
 
-    /* FORMULÁRIO DE ENTRADA */
+    /* ENTRADA */
     .input-group {
       display: flex;
       gap: 8px;
@@ -172,7 +172,7 @@
       background: var(--bg);
       border: 1px solid var(--surface-border);
       color: var(--text);
-      padding: 10px 14px;
+      padding: 11px 14px;
       border-radius: 8px;
       font-size: 14px;
       outline: none;
@@ -244,7 +244,7 @@
       color: var(--text);
     }
 
-    /* BIBLIOTECA OFFLINE */
+    /* LISTA */
     .lib-list {
       display: flex;
       flex-direction: column;
@@ -295,7 +295,7 @@
       font-size: 14px;
     }
 
-    /* PAINEL DE VISUALIZAÇÃO EMBUTIDO */
+    /* VISUALIZADOR DE CONTEÚDO */
     #viewer-container {
       display: none;
       position: fixed;
@@ -309,14 +309,14 @@
     }
 
     #viewer-hud {
-      background: #111827;
+      background: #0f172a;
       color: white;
-      padding: 8px 16px;
+      padding: 10px 16px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       font-size: 13px;
-      border-bottom: 1px solid #374151;
+      border-bottom: 1px solid #1e293b;
       gap: 10px;
     }
 
@@ -329,9 +329,9 @@
     .savings-badge {
       background: #065f46;
       color: #34d399;
-      padding: 3px 8px;
-      border-radius: 4px;
-      font-size: 11px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
       font-weight: 600;
     }
 
@@ -342,7 +342,7 @@
       background: white;
     }
 
-    /* MODAL DE COMPARTILHAMENTO */
+    /* MODAIS */
     .modal-overlay {
       display: none;
       position: fixed;
@@ -378,20 +378,35 @@
       font-size: 1.1rem;
     }
 
-    /* NOTIFICAÇÃO TOAST */
+    /* TOAST FEEDBACK */
     #toast {
       position: fixed;
       bottom: 20px;
       right: 20px;
       background: var(--surface);
       color: var(--text);
-      border: 1px solid var(--surface-border);
-      padding: 10px 18px;
+      border: 1px solid var(--primary);
+      padding: 12px 20px;
       border-radius: 8px;
       font-size: 13px;
-      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+      font-weight: 500;
+      box-shadow: 0 10px 20px -3px rgba(0, 0, 0, 0.5);
       display: none;
       z-index: 3000;
+    }
+
+    /* SPINNER */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: white;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
   </style>
 </head>
@@ -407,30 +422,33 @@
       <div id="net-status" class="status-badge">
         <span style="font-size: 8px;">●</span> Conectado
       </div>
+      <button class="btn-icon" id="btn-settings" title="Configurações do Servidor Cloud">⚙️</button>
       <button class="btn-icon" id="btn-theme" title="Alternar Modo Solar / Noturno">🌓</button>
     </div>
   </header>
 
   <!-- CONTEÚDO PRINCIPAL -->
   <main>
-    <!-- CARD DE CARREGAMENTO DIRETO -->
+    <!-- CARD DE ENTRADA INTELIGENTE (URL OU PAYLOAD) -->
     <div class="card">
-      <h2 class="card-title">🌐 Carregar Página Compactada</h2>
+      <h2 class="card-title">🌐 Acessar ou Compactar Site</h2>
       <p class="card-desc">
-        Abra páginas enviadas por satélite, rádio ou 2G. As páginas são descompactadas no seu próprio navegador com <strong>0 bytes</strong> de download extra.
+        Digite a <strong>URL de qualquer site</strong> (ex: <code>https://news.ycombinator.com</code> ou <code>g1.globo.com</code>) para compactá-lo para áreas remotas, ou cole um link compactado (<code>#v2;...</code>) para abrir sem internet.
       </p>
       <div class="input-group">
-        <input type="text" id="payload-input" placeholder="Cole o link ou payload (#v2;deflate;...)" autocomplete="off" />
-        <button class="btn-primary" id="btn-open">Abrir</button>
+        <input type="text" id="payload-input" placeholder="Digite uma URL (ex: https://...) ou cole o payload #v2;..." autocomplete="off" />
+        <button class="btn-primary" id="btn-open">
+          <span id="btn-open-text">Acessar</span>
+        </button>
       </div>
     </div>
 
-    <!-- SELETOR DE ABAS -->
+    <!-- ABAS -->
     <div>
       <div class="tabs">
         <button class="tab-btn active" id="tab-btn-lib" onclick="switchTab('lib')">💾 Minha Biblioteca Offline</button>
-        <button class="tab-btn" id="tab-btn-pack" onclick="switchTab('pack')">📦 Compactador de Bolso</button>
-        <button class="tab-btn" id="tab-btn-samples" onclick="switchTab('samples')">🚨 Guias de Emergência</button>
+        <button class="tab-btn" id="tab-btn-pack" onclick="switchTab('pack')">📦 Compactador de Notas</button>
+        <button class="tab-btn" id="tab-btn-samples" onclick="switchTab('samples')">🚨 Manuais de Emergência</button>
       </div>
 
       <!-- ABA 1: BIBLIOTECA LOCAL INDEXEDDB -->
@@ -441,20 +459,20 @@
         </div>
         <div id="lib-list" class="lib-list">
           <div class="empty-state">
-            Nenhuma página salva ainda. Abra qualquer link compactado e clique em "Salvar Offline" para guardá-la permanentemente na memória do seu aparelho.
+            Nenhuma página salva ainda. Abra qualquer site e clique no botão "💾 Salvar Offline" para guardá-lo permanentemente na memória do aparelho.
           </div>
         </div>
       </div>
 
-      <!-- ABA 2: COMPACTADOR LOCAL (OFFLINE-FIRST) -->
+      <!-- ABA 2: COMPACTADOR LOCAL OFFLINE -->
       <div id="tab-content-pack" class="card" style="display: none;">
-        <h3 class="card-title">Criar Pacote Compactado</h3>
+        <h3 class="card-title">Criar Pacote Compactado no Aparelho</h3>
         <p class="card-desc">
-          Digite ou cole um texto, manual ou código HTML para gerar uma URL compactada ultra-leve para enviar via SMS, rádio ou satélite.
+          Digite ou cole um comunicado, manual ou código HTML para gerar um link ultra-leve para enviar via SMS, rádio ou satélite (100% no navegador, sem servidor).
         </p>
         <div style="display: flex; flex-direction: column; gap: 10px;">
-          <input type="text" id="pack-title" placeholder="Título da Página (Ex: Manual do Rádio HF)" />
-          <textarea id="pack-content" rows="6" placeholder="Cole o texto ou código HTML aqui..."></textarea>
+          <input type="text" id="pack-title" placeholder="Título da Página (Ex: Relatório de Campo)" />
+          <textarea id="pack-content" rows="6" placeholder="Digite o conteúdo ou cole código HTML aqui..."></textarea>
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <span style="font-size: 12px; color: var(--text-muted);" id="pack-stats">0 caracteres</span>
             <button class="btn-primary" id="btn-pack-generate">Gerar Link Resiliente</button>
@@ -462,49 +480,49 @@
         </div>
       </div>
 
-      <!-- ABA 3: GUIAS DE EMERGÊNCIA PRÉ-CARREGADOS -->
+      <!-- ABA 3: GUIAS DE EMERGÊNCIA -->
       <div id="tab-content-samples" class="card" style="display: none;">
         <h3 class="card-title">Manuais Críticos de Campo</h3>
         <p class="card-desc">
-          Guias essenciais já compactados disponíveis para salvar na memória e usar em áreas sem qualquer sinal de celular.
+          Guias essenciais já compactados disponíveis para abrir e salvar na memória para áreas sem sinal telefônico.
         </p>
         <div class="lib-list">
           <div class="lib-item">
             <div class="lib-item-info">
-              <div class="lib-item-title">💧 Guia de Purificação de Água em Campo</div>
+              <div class="lib-item-title">💧 Purificação de Água em Campo</div>
               <div class="lib-item-meta">
                 <span>Fervura, cloração e desinfecção solar SODIS</span>
                 <span>• ~1.2 KB</span>
               </div>
             </div>
             <div class="lib-item-actions">
-              <button class="btn-secondary" onclick="loadSample('water')">Abrir</button>
+              <button class="btn-primary" style="padding: 6px 14px; font-size: 13px;" onclick="loadSample('water')">Abrir</button>
             </div>
           </div>
 
           <div class="lib-item">
             <div class="lib-item-info">
-              <div class="lib-item-title">🩹 Manual de Primeiros Socorros & Hemorragias</div>
+              <div class="lib-item-title">🩹 Primeiros Socorros & Hemorragias</div>
               <div class="lib-item-meta">
-                <span>Compressão direta, torniquetes e posicionamento de choque</span>
+                <span>Compressão direta, torniquetes e choque hipovolêmico</span>
                 <span>• ~1.8 KB</span>
               </div>
             </div>
             <div class="lib-item-actions">
-              <button class="btn-secondary" onclick="loadSample('firstaid')">Abrir</button>
+              <button class="btn-primary" style="padding: 6px 14px; font-size: 13px;" onclick="loadSample('firstaid')">Abrir</button>
             </div>
           </div>
 
           <div class="lib-item">
             <div class="lib-item-info">
-              <div class="lib-item-title">📡 Tabela de Código Morse & Sinais de Emergência</div>
+              <div class="lib-item-title">📡 Tabela de Código Morse & Sinais SOS</div>
               <div class="lib-item-meta">
-                <span>Sinalização SOS sonora, luminosa e alfabeto internacional</span>
+                <span>Sinalização luminosa, sonora e alfabeto de socorro</span>
                 <span>• ~0.9 KB</span>
               </div>
             </div>
             <div class="lib-item-actions">
-              <button class="btn-secondary" onclick="loadSample('morse')">Abrir</button>
+              <button class="btn-primary" style="padding: 6px 14px; font-size: 13px;" onclick="loadSample('morse')">Abrir</button>
             </div>
           </div>
         </div>
@@ -512,28 +530,28 @@
     </div>
   </main>
 
-  <!-- VISUALIZADOR HUD DE PÁGINA DESCOMPACTADA -->
+  <!-- VISUALIZADOR HUD DE PÁGINA COMPACTADA -->
   <div id="viewer-container">
     <div id="viewer-hud">
       <div class="hud-group">
-        <button class="btn-secondary" id="btn-viewer-back" style="padding: 4px 8px; font-size: 12px;">⬅ Voltar</button>
-        <span id="viewer-title" style="font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Visualizador de Página</span>
+        <button class="btn-secondary" id="btn-viewer-back" style="padding: 5px 10px; font-size: 12px; font-weight: 600;">⬅ Voltar</button>
+        <span id="viewer-title" style="font-weight: 600; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Visualizador</span>
       </div>
       <div class="hud-group">
         <span id="viewer-savings" class="savings-badge">Economia: --%</span>
-        <button class="btn-secondary" id="btn-viewer-save" style="padding: 4px 8px; font-size: 12px;">💾 Salvar Offline</button>
-        <button class="btn-secondary" id="btn-viewer-share" style="padding: 4px 8px; font-size: 12px;">📤 Compartilhar</button>
+        <button class="btn-primary" id="btn-viewer-save" style="padding: 5px 12px; font-size: 12px;">💾 Salvar Offline</button>
+        <button class="btn-secondary" id="btn-viewer-share" style="padding: 5px 10px; font-size: 12px;">📤 Compartilhar</button>
       </div>
     </div>
     <iframe id="content-frame" sandbox="allow-scripts allow-forms allow-same-origin allow-popups"></iframe>
   </div>
 
-  <!-- MODAL DE COMPARTILHAMENTO / QR CODE -->
+  <!-- MODAL DE COMPARTILHAMENTO -->
   <div id="share-modal" class="modal-overlay">
     <div class="modal">
       <div class="modal-header">
-        <h3 class="modal-title">Compartilhar Offline</h3>
-        <button class="btn-icon" onclick="fecharModalCompartilhar()">✕</button>
+        <h3 class="modal-title">Compartilhar Página Offline</h3>
+        <button class="btn-icon" onclick="document.getElementById('share-modal').style.display='none'">✕</button>
       </div>
       <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
         Transmita este link para outro aparelho via Nearby Share, Bluetooth ou copie o texto:
@@ -541,7 +559,25 @@
       <input type="text" id="share-url-box" readonly style="width: 100%; margin-bottom: 12px;" />
       <div style="display: flex; gap: 8px;">
         <button class="btn-primary" id="btn-copy-url" style="flex: 1;">📋 Copiar Link</button>
-        <button class="btn-secondary" id="btn-native-share" style="flex: 1;">📲 Enviar via Sistema</button>
+        <button class="btn-secondary" id="btn-native-share" style="flex: 1;">📲 Enviar via Aparelho</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL DE CONFIGURAÇÃO DE SERVIDOR CLOUD -->
+  <div id="settings-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">Configuração Cloud Packager</h3>
+        <button class="btn-icon" onclick="document.getElementById('settings-modal').style.display='none'">✕</button>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+        Endereço do servidor Colab/Kaggle com túnel Cloudflare para baixar e compactar sites remotos a 1Gbps+:
+      </p>
+      <input type="text" id="packager-url-input" style="width: 100%; margin-bottom: 12px;" />
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="btn-secondary" onclick="document.getElementById('settings-modal').style.display='none'">Cancelar</button>
+        <button class="btn-primary" id="btn-save-settings">Salvar</button>
       </div>
     </div>
   </div>
@@ -549,20 +585,38 @@
   <!-- TOAST FEEDBACK -->
   <div id="toast"></div>
 
-  <!-- SCRIPT DO MOTOR POCKETWEB -->
+  <!-- SUPORTE A WASM (BROTLI KERNEL) -->
+  <script src="wasm_exec.js"></script>
+
+  <!-- MOTOR POCKETWEB -->
   <script>
     'use strict';
 
-    // REGISTRO DE SERVICE WORKER PARA RESILIÊNCIA OFFLINE PERMANENTE
+    // REGISTRO DE SERVICE WORKER PARA RESILIÊNCIA OFFLINE
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js').then((reg) => {
-          console.log('[PocketWeb] ServiceWorker operacional:', reg.scope);
-        }).catch((err) => {
-          console.warn('[PocketWeb] ServiceWorker indisponível:', err);
-        });
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
       });
     }
+
+    // CONFIGURAÇÃO DO TÚNEL CLOUDFLARE DO COLAB
+    const DEFAULT_PACKAGER = 'https://controls-louisville-joe-legitimate.trycloudflare.com';
+    let packagerUrl = localStorage.getItem('pocketweb_packager') || DEFAULT_PACKAGER;
+
+    document.getElementById('btn-settings').onclick = () => {
+      document.getElementById('packager-url-input').value = packagerUrl;
+      document.getElementById('settings-modal').style.display = 'flex';
+    };
+
+    document.getElementById('btn-save-settings').onclick = () => {
+      const val = document.getElementById('packager-url-input').value.trim().replace(/\/+$/, '');
+      if (val) {
+        packagerUrl = val;
+        localStorage.setItem('pocketweb_packager', packagerUrl);
+        showToast('Configurações salvas!');
+      }
+      document.getElementById('settings-modal').style.display = 'none';
+    };
 
     // MONITOR DE CONEXÃO
     function updateNetStatus() {
@@ -579,7 +633,7 @@
     window.addEventListener('offline', updateNetStatus);
     updateNetStatus();
 
-    // ALTERNADOR DE TEMA (SOLAR / NOTURNO OLED)
+    // ALTERNADOR DE TEMA
     const btnTheme = document.getElementById('btn-theme');
     let currentTheme = localStorage.getItem('pocketweb_theme') || 'dark';
     document.documentElement.setAttribute('data-theme', currentTheme);
@@ -593,13 +647,32 @@
       const t = document.getElementById('toast');
       t.innerText = msg;
       t.style.display = 'block';
-      setTimeout(() => { t.style.display = 'none'; }, 3000);
+      setTimeout(() => { t.style.display = 'none'; }, 3500);
     }
 
-    // --- GERENCIADOR DE BANCO DE DADOS LOCAL (INDEXEDDB) ---
+    // --- CARREGADOR WASM PARA BROTLI ---
+    let wasmPronto = false;
+    async function bootWasm() {
+      if (wasmPronto) return true;
+      try {
+        const go = new Go();
+        const resp = await fetch("wasm.wasm?v=" + Date.now());
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const wasmBytes = await resp.arrayBuffer();
+        const result = await WebAssembly.instantiate(wasmBytes, go.importObject);
+        go.run(result.instance);
+        wasmPronto = true;
+        return true;
+      } catch (err) {
+        console.warn("WASM falhou:", err);
+        return false;
+      }
+    }
+
+    // --- BANCO DE DADOS LOCAL (INDEXEDDB) ---
     let db;
     function initDB() {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
         const req = indexedDB.open('PocketWebDB', 1);
         req.onupgradeneeded = (e) => {
           const d = e.target.result;
@@ -612,12 +685,13 @@
           renderSavedList();
           resolve(db);
         };
-        req.onerror = (e) => reject(e);
+        req.onerror = () => resolve(null);
       });
     }
 
     function saveArticleToDB(article) {
       return new Promise((resolve, reject) => {
+        if (!db) return resolve();
         const tx = db.transaction('articles', 'readwrite');
         const store = tx.objectStore('articles');
         store.put(article);
@@ -631,6 +705,7 @@
 
     function deleteArticleFromDB(id) {
       return new Promise((resolve, reject) => {
+        if (!db) return resolve();
         const tx = db.transaction('articles', 'readwrite');
         const store = tx.objectStore('articles');
         store.delete(id);
@@ -643,26 +718,26 @@
     }
 
     function getAllArticles() {
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
+        if (!db) return resolve([]);
         const tx = db.transaction('articles', 'readonly');
         const store = tx.objectStore('articles');
         const req = store.getAll();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = (e) => reject(e);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => resolve([]);
       });
     }
 
     async function renderSavedList() {
       const listEl = document.getElementById('lib-list');
       const countEl = document.getElementById('lib-count');
-      if (!db) return;
       const articles = await getAllArticles();
       countEl.innerText = `${articles.length} página${articles.length === 1 ? '' : 's'}`;
 
       if (articles.length === 0) {
         listEl.innerHTML = `
           <div class="empty-state">
-            Nenhuma página salva ainda. Abra qualquer link compactado e clique em "Salvar Offline" para guardá-la permanentemente na memória do seu aparelho.
+            Nenhuma página salva ainda. Digite um site acima e clique em "Salvar Offline" para guardá-la na memória do seu aparelho.
           </div>`;
         return;
       }
@@ -693,24 +768,21 @@
     }
 
     async function openSaved(id) {
-      const tx = db.transaction('articles', 'readonly');
-      const req = tx.objectStore('articles').get(id);
-      req.onsuccess = () => {
-        const art = req.result;
-        if (art) {
-          abrirViewer(art.title, art.html, art.rawSize, art.compSize, art.hash);
-        }
-      };
+      const articles = await getAllArticles();
+      const art = articles.find(a => a.id === id);
+      if (art) {
+        abrirViewer(art.title, art.html, art.rawSize, art.compSize, art.hash);
+      }
     }
 
     async function deleteSaved(id) {
       if (confirm('Deseja remover esta página da sua memória offline?')) {
         await deleteArticleFromDB(id);
-        showToast('Página removida da memória.');
+        showToast('Página removida.');
       }
     }
 
-    // --- MOTOR NATIVO DE DESCOMPRESSÃO 0-BYTE ---
+    // --- FUNÇÕES AUXILIARES DE BYTES ---
     function base64UrlToUint8Array(base64Url) {
       let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
       while (base64.length % 4) base64 += '=';
@@ -755,7 +827,7 @@
       return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    // ESTADO ATUAL DO VISUALIZADOR
+    // --- VISUALIZADOR HUD ---
     let currentArticle = null;
 
     function abrirViewer(title, html, rawSize, compSize, hash) {
@@ -777,7 +849,7 @@
       document.getElementById('viewer-container').style.display = 'none';
       document.getElementById('content-frame').srcdoc = '';
       currentArticle = null;
-      window.location.hash = '';
+      if (window.location.hash) history.pushState("", document.title, window.location.pathname);
     }
 
     document.getElementById('btn-viewer-back').onclick = fecharViewer;
@@ -787,7 +859,7 @@
       const id = 'art_' + Date.now();
       await saveArticleToDB({
         id: id,
-        title: currentArticle.title || 'Documento Sem Título',
+        title: currentArticle.title || 'Página Web',
         html: currentArticle.html,
         rawSize: currentArticle.rawSize,
         compSize: currentArticle.compSize,
@@ -804,15 +876,11 @@
       document.getElementById('share-modal').style.display = 'flex';
     };
 
-    function fecharModalCompartilhar() {
-      document.getElementById('share-modal').style.display = 'none';
-    }
-
     document.getElementById('btn-copy-url').onclick = () => {
       const box = document.getElementById('share-url-box');
       box.select();
       navigator.clipboard.writeText(box.value).then(() => {
-        showToast('Link copiado para a área de transferência!');
+        showToast('Link copiado!');
       });
     };
 
@@ -821,22 +889,68 @@
       if (navigator.share) {
         navigator.share({
           title: currentArticle ? currentArticle.title : 'PocketWeb',
-          text: 'Página compactada offline via PocketWeb:',
           url: url
         }).catch(() => {});
       } else {
-        showToast('Compartilhamento direto não suportado neste navegador. Use Copiar.');
+        showToast('Compartilhamento direto indisponível. Copie o link.');
       }
     };
 
-    // PROCESSAMENTO DE PAYLOADS COMPACTADOS
-    async function processarPayload(inputStr) {
+    // --- PROCESSAMENTO INTELIGENTE: URL OU PAYLOAD ---
+    async function processarEntrada(inputStr) {
       try { inputStr = decodeURIComponent(inputStr); } catch(e) {}
+      inputStr = inputStr.trim();
+      if (!inputStr) return;
+
+      // Se for uma URL externa comum (ex: https://..., g1.globo.com, news.ycombinator.com)
+      const isHttpUrl = /^https?:\/\//i.test(inputStr) || (!inputStr.startsWith('#') && !inputStr.startsWith('v1;') && !inputStr.startsWith('v2;') && inputStr.includes('.'));
+
+      if (isHttpUrl) {
+        let target = inputStr;
+        if (!target.startsWith('http://') && !target.startsWith('https://')) {
+          target = 'https://' + target;
+        }
+
+        const btn = document.getElementById('btn-open');
+        const btnText = document.getElementById('btn-open-text');
+        btnText.innerHTML = '<span class="spinner"></span> Compactando...';
+        btn.disabled = true;
+
+        showToast('☁️ Enviando ao Cloud Packager (reduzindo dados a 1Gbps)...');
+
+        try {
+          const endpoint = `${packagerUrl}/pack?url=${encodeURIComponent(target)}`;
+          const resp = await fetch(endpoint);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status} do servidor Cloud`);
+          const data = await resp.json();
+
+          if (!data.boot_url) throw new Error("Servidor não retornou link de boot");
+
+          showToast(`⚡ Sucesso! ${data.reduction_pct}% menor. Descompactando no celular...`);
+          
+          // Extrai o hash retornado e processa
+          const returnedHash = data.boot_url.includes('#') ? data.boot_url.split('#')[1] : data.boot_url;
+          window.location.hash = returnedHash;
+          await processarPayload(returnedHash);
+
+        } catch (err) {
+          alert(`Não foi possível compactar o site automaticamente.\nMotivo: ${err.message}\n\nDica: Verifique se o notebook Colab está ligado ou cole diretamente um link #v2;...`);
+        } finally {
+          btnText.innerText = 'Acessar';
+          btn.disabled = false;
+        }
+        return;
+      }
+
+      // Se já for payload #v2;...
+      await processarPayload(inputStr);
+    }
+
+    async function processarPayload(inputStr) {
       if (inputStr.startsWith('#')) inputStr = inputStr.substring(1);
       inputStr = inputStr.trim();
       if (!inputStr) return;
 
-      // 1. Extração do formato v2;algo;[partes];chunkSha;rootSha;payload
       let algo = "deflate";
       let payloadBruto = "";
 
@@ -849,31 +963,34 @@
         algo = parts[1] || "deflate";
         payloadBruto = parts.slice(5).join(";");
       } else {
-        // Fallback genérico
         payloadBruto = inputStr;
       }
 
-      showToast(`Descompactando via motor ${algo.toUpperCase()} nativo...`);
+      showToast(`⚡ Descompactando via motor ${algo.toUpperCase()}...`);
 
       try {
         let htmlPuro = "";
-        const binaryBytes = base64UrlToUint8Array(payloadBruto);
 
         if (algo === "deflate" || algo === "deflate-raw") {
+          const binaryBytes = base64UrlToUint8Array(payloadBruto);
           htmlPuro = await decompressNative(binaryBytes, "deflate-raw");
         } else if (algo === "gzip") {
+          const binaryBytes = base64UrlToUint8Array(payloadBruto);
           htmlPuro = await decompressNative(binaryBytes, "gzip");
-        } else {
-          // Brotli nativo ou fallback
-          try {
-            htmlPuro = await decompressNative(binaryBytes, "deflate-raw");
-          } catch(err) {
-            throw new Error(`Algoritmo ${algo} requer empacotamento compatível com deflate.`);
+        } else if (algo === "brotli") {
+          // Usa kernel WASM para Brotli
+          if (!wasmPronto) {
+            showToast("Iniciando motor Brotli WASM...");
+            const ok = await bootWasm();
+            if (!ok) throw new Error("Kernel WASM indisponível para descompressão Brotli.");
           }
+          htmlPuro = window.decoder(payloadBruto);
+          if (htmlPuro.startsWith("Error")) throw new Error(htmlPuro);
+        } else {
+          throw new Error(`Algoritmo ${algo} não suportado.`);
         }
 
-        // Detecta título do HTML ou texto
-        let docTitle = "Página Descompactada";
+        let docTitle = "Página Web Descompactada";
         const titleMatch = htmlPuro.match(/<title>([^<]+)<\/title>/i);
         if (titleMatch) {
           docTitle = titleMatch[1];
@@ -883,7 +1000,7 @@
         }
 
         const rawSize = new TextEncoder().encode(htmlPuro).length;
-        const compSize = binaryBytes.length;
+        const compSize = payloadBruto.length;
 
         abrirViewer(docTitle, htmlPuro, rawSize, compSize, '#' + inputStr);
 
@@ -892,13 +1009,20 @@
       }
     }
 
-    // BOTÃO ABRIR LINK DIGITADO
+    // BOTÃO ABRIR
     document.getElementById('btn-open').onclick = () => {
       const val = document.getElementById('payload-input').value;
-      if (val) processarPayload(val);
+      if (val) processarEntrada(val);
     };
 
-    // NAVEGAÇÃO POR ABAS
+    document.getElementById('payload-input').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        const val = document.getElementById('payload-input').value;
+        if (val) processarEntrada(val);
+      }
+    });
+
+    // ABAS
     function switchTab(tab) {
       document.getElementById('tab-btn-lib').className = 'tab-btn' + (tab === 'lib' ? ' active' : '');
       document.getElementById('tab-btn-pack').className = 'tab-btn' + (tab === 'pack' ? ' active' : '');
@@ -909,7 +1033,7 @@
       document.getElementById('tab-content-samples').style.display = tab === 'samples' ? 'block' : 'none';
     }
 
-    // COMPACTADOR LOCAL INTEGRADO (100% NAVEGADOR)
+    // COMPACTADOR LOCAL (100% NAVEGADOR)
     const packContent = document.getElementById('pack-content');
     packContent.addEventListener('input', () => {
       document.getElementById('pack-stats').innerText = `${packContent.value.length} caracteres digitados`;
@@ -923,7 +1047,6 @@
         return;
       }
 
-      // Se não for HTML completo, envelopa com estilo limpo
       if (!content.includes('<html') && !content.includes('<!DOCTYPE')) {
         content = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>${title}</title><style>body{font-family:system-ui,sans-serif;line-height:1.6;padding:20px;max-width:700px;margin:auto;color:#1e293b;background:#f8fafc;}h1{border-bottom:2px solid #2563eb;padding-bottom:8px;margin-bottom:16px;}p{margin-bottom:12px;}</style></head><body><h1>${title}</h1>${content.split('\n\n').map(p=>`<p>${p.replace(/\n/g, '<br>')}</p>`).join('')}</body></html>`;
       }
@@ -947,7 +1070,7 @@
     const SAMPLE_DOCS = {
       water: `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Purificação de Água em Campo</title><style>body{font-family:system-ui,sans-serif;line-height:1.6;padding:20px;max-width:720px;margin:auto;color:#0f172a;background:#fff;}h1{color:#1e40af;}h2{color:#0369a1;margin-top:20px;border-bottom:1px solid #e2e8f0;padding-bottom:4px;}ul,ol{padding-left:20px;margin-bottom:16px;}li{margin-bottom:6px;}.alert{background:#fef2f2;border-left:4px solid #ef4444;padding:10px 14px;margin:14px 0;}</style></head><body><h1>💧 Purificação de Água em Emergências</h1><p>Em áreas remotas, o consumo de água contaminada é a principal causa de incapacitação. Métodos comprovados:</p><h2>1. Fervura (Método Mais Seguro)</h2><ol><li>Filtre a água com pano limpo para remover sedimentos visíveis.</li><li>Deixe entrar em ebulição vigorosa por no mínimo <strong>1 minuto inteiro</strong> (ou 3 minutos em altitudes superiores a 2.000m).</li><li>Deixe esfriar naturalmente em recipiente tampado.</li></ol><h2>2. Cloração com Hipoclorito (Água Sanitária Comum)</h2><ul><li>Use apenas água sanitária comum sem perfume (2% a 2.5% de cloro ativo).</li><li>Dosagem: <strong>2 gotas por litro</strong> de água límpida (ou 4 gotas se a água estiver turva).</li><li>Misture bem e <strong>aguarde 30 minutos</strong> antes de consumir. Deve haver leve odor de cloro.</li></ul><h2>3. Desinfecção Solar (Método SODIS)</h2><p>Coloque água transparente em garrafas PET limpas e deixe sob sol pleno por <strong>6 horas consecutivas</strong>. A radiação UV-A destrói os patógenos.</p><div class="alert"><strong>Atenção:</strong> A fervura e o cloro não removem metais pesados ou pesticidas. Busque sempre nascentes distantes de lavouras.</div></body></html>`,
       firstaid: `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Primeiros Socorros em Áreas Remotas</title><style>body{font-family:system-ui,sans-serif;line-height:1.6;padding:20px;max-width:720px;margin:auto;color:#0f172a;background:#fff;}h1{color:#b91c1c;}h2{color:#991b1b;margin-top:20px;border-bottom:1px solid #fecaca;padding-bottom:4px;}ul,ol{padding-left:20px;margin-bottom:16px;}li{margin-bottom:6px;}.box{background:#f8fafc;border:1px solid #cbd5e1;border-radius:8px;padding:12px;margin:12px 0;}</style></head><body><h1>🩹 Primeiros Socorros em Áreas Isoladas</h1><h2>1. Hemorragias Graves</h2><div class="box"><strong>Ordem de Ação:</strong><ol><li><strong>Pressão Direta:</strong> Pressione firmemente gaze ou pano limpo contra o ferimento com as mãos sem interromper por 5 minutos.</li><li><strong>Curativo Compressivo:</strong> Enfaixe firmemente. Se encharcar de sangue, <em>não retire</em>; adicione mais panos por cima.</li><li><strong>Torniquete:</strong> Para membros com risco iminente de morte, aplique 5cm a 7cm acima do corte. Anote a hora exata da aplicação.</li></ol></div><h2>2. Prevenção de Choque Hipovolêmico</h2><ul><li>Deite a vítima de costas em local seco.</li><li>Eleve as pernas cerca de 30 cm (exceto se houver suspeita de fratura na coluna/pélvis).</li><li>Mantenha a vítima aquecida com mantas térmicas ou roupas secas.</li></ul><h2>3. Picadas de Animais Peçonhentos</h2><ul><li>Mantenha a vítima em repouso absoluto para não acelerar o veneno.</li><li>Lave o local com água e sabão.</li><li><strong>NÃO</strong> faça torniquete, <strong>NÃO</strong> corte e <strong>NÃO</strong> tente chupar o veneno. Hidrate a vítima e busque resgate.</li></ul></body></html>`,
-      morse: `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Código Morse & Sinais de Emergência</title><style>body{font-family:system-ui,sans-serif;line-height:1.6;padding:20px;max-width:720px;margin:auto;color:#0f172a;background:#fff;}h1{color:#0f766e;}table{width:100%;border-collapse:collapse;margin:16px 0;}th,td{border:1px solid #cbd5e1;padding:8px 12px;text-align:left;}th{background:#f1f5f9;}.sos{font-size:1.4rem;font-weight:bold;color:#dc2626;letter-spacing:2px;}</style></head><body><h1>📡 Código Morse & Sinais SOS</h1><p>Sinais de socorro reconhecidos internacionalmente para uso com apito, lanterna ou espelho:</p><div style="text-align:center;padding:16px;background:#fef2f2;border-radius:8px;margin:16px 0;"><span class="sos">··· ─── ··· (S - O - S)</span><br><small>3 curtos, 3 longos, 3 curtos. Pause 3 segundos e repita continuamente.</small></div><h2>Tabela Alfabética Básica</h2><table><tr><th>Letra</th><th>Código</th><th>Letra</th><th>Código</th></tr><tr><td>A</td><td>· ─</td><td>N</td><td>─ ·</td></tr><tr><td>B</td><td>─ · · ·</td><td>O</td><td>─ ─ ─</td></tr><tr><td>C</td><td>─ · ─ ·</td><td>P</td><td>· ─ ─ ·</td></tr><tr><td>D</td><td>─ · ·</td><td>Q</td><td>─ ─ · ─</td></tr><tr><td>E</td><td>·</td><td>R</td><td>· ─ ·</td></tr><tr><td>F</td><td>· · ─ ·</td><td>S</td><td>· · ·</td></tr><tr><td>G</td><td>─ ─ ·</td><td>T</td><td>─</td></tr><tr><td>H</td><td>· · · ·</td><td>U</td><td>· · ─</td></tr><tr><td>I</td><td>· ·</td><td>V</td><td>· · · ─</td></tr><tr><td>J</td><td>· ─ ─ ─</td><td>W</td><td>· ─ ─</td></tr><tr><td>K</td><td>─ · ─</td><td>X</td><td>─ · · ─</td></tr><tr><td>L</td><td>· ─ · ·</td><td>Y</td><td>─ · ─ ─</td></tr><tr><td>M</td><td>─ ─</td><td>Z</td><td>─ ─ · ·</td></tr></table></body></html>`
+      morse: `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Código Morse & Sinais de Emergência</title><style>body{font-family:system-ui,sans-serif;line-height:1.6;padding:20px;max-width:720px;margin:auto;color:#0f172a;background:#fff;}h1{color:#0f766e;}table{width:100%;border-collapse:collapse;margin:16px 0;}th,td{border:1px solid #cbd5e1;padding:8px 12px;text-align:left;}th{background:#f1f5f9;}.sos{font-size:1.4rem;font-weight:bold;color:#dc2626;letter-spacing:2px;}</style></head><body><h1>📡 Código Morse & Sinais SOS</h1><p>Sinais de socorro reconhecidos internacionalmente para uso com apito, lanterna ou espelho:</p><div style="text-align:center;padding:16px;background:#fef2f2;border-radius:8px;margin:16px 0;"><span class="sos">··· ─── ··· (S - O - S)</span><br><small>3 curtos, 3 longos, 3 curtos. Pause 3 segundos e repita continuamente.</small></div><h2>Tabela Alfabética Básica</h2><table><tr><th>Letra</th><th>Código</th><th>Letra</th><th>Código</th></tr><tr><td>A</td><td>· ─</td><td>N</td><td>─ ·</td></tr><tr><td>B</td><td>─ · · ·</td><td>O</td><td>─ ─ ─</td></tr><tr><td>C</td><td>─ · ─ ·</td><td>P</td><td>· ─ ─ ·</td></tr><tr><td>D</td><td>─ · ─</td><td>Q</td><td>─ ─ · ─</td></tr><tr><td>E</td><td>·</td><td>R</td><td>· ─ ·</td></tr><tr><td>F</td><td>· · ─ ·</td><td>S</td><td>· · ·</td></tr><tr><td>G</td><td>─ ─ ·</td><td>T</td><td>─</td></tr><tr><td>H</td><td>· · · ·</td><td>U</td><td>· · ─</td></tr><tr><td>I</td><td>· ·</td><td>V</td><td>· · · ─</td></tr><tr><td>J</td><td>· ─ ─ ─</td><td>W</td><td>· ─ ─</td></tr><tr><td>K</td><td>─ · ─</td><td>X</td><td>─ · · ─</td></tr><tr><td>L</td><td>· ─ · ·</td><td>Y</td><td>─ · ─ ─</td></tr><tr><td>M</td><td>─ ─</td><td>Z</td><td>─ ─ · ·</td></tr></table></body></html>`
     };
 
     async function loadSample(key) {
@@ -965,11 +1088,12 @@
       abrirViewer(titles[key], html, rawSize, compressedBytes.length, `#v2;deflate;[1/1];${sha};${sha};${b64}`);
     }
 
-    // INICIALIZAÇÃO
+    // BOOT INICIAL
     window.onload = async () => {
       await initDB();
-      if (window.location.hash.length > 1) {
-        processarPayload(window.location.hash);
+      const hashAtual = window.location.hash;
+      if (hashAtual.length > 1) {
+        processarPayload(hashAtual);
       }
     };
   </script>

@@ -21,6 +21,7 @@ import zlib
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 BOOT = os.path.join(ROOT, "Website", "index.html")
+BOOT_JS = os.path.join(ROOT, "Website", "boot.js")
 README = os.path.join(ROOT, "README.md")
 MAIN_GO = os.path.join(ROOT, "main.go")
 LIN = os.path.join(ROOT, "examples", "cpmm_oracle.lin")
@@ -34,6 +35,10 @@ V2_RE = re.compile(
 def read(path: str) -> str:
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         return fh.read()
+
+
+def boot_src() -> str:
+    return read(BOOT) + "\n" + read(BOOT_JS)
 
 
 def sha(s: str) -> str:
@@ -57,15 +62,18 @@ def pack_deflate(data: bytes, chunk_size: int | None = None) -> list[str]:
 
 
 class Boot:
-    """Mirror of Website/index.html processarHash + verificarProgresso."""
+    """Mirror of Website/boot.js processarHash + verificarProgresso."""
 
-    def __init__(self) -> None:
+    def __init__(self, pin: str | None = None, legacy: bool = False, require_pin: bool = False) -> None:
         self.disks: list[str | None] = []
         self.total = 0
         self.root: str | None = None
         self.algo = "brotli"
         self.rejected = False
         self.executed: str | None = None
+        self.pin = (pin or "").replace("sha256:", "").lower()
+        self.legacy = legacy
+        self.require_pin = require_pin
 
     def process(self, raw: str) -> None:
         raw = raw[1:] if raw.startswith("#") else raw
@@ -76,6 +84,9 @@ class Boot:
                 m.group(1), int(m.group(2)), int(m.group(3)),
                 m.group(4), m.group(5), m.group(6),
             )
+            if self.root and root != self.root:
+                self.rejected = True
+                return
             self.total = t
             if self.root is None:
                 self.root = root
@@ -86,6 +97,9 @@ class Boot:
                 self.disks = [None] * self.total
             self.disks[a - 1] = payload
             self._maybe_exec()
+            return
+        if not self.legacy:
+            self.rejected = True
             return
         if re.match(r"^v1;\[(\d+)/(\d+)\]", raw):
             mm = re.match(r"^v1;\[(\d+)/(\d+)\](.*)", raw)
@@ -103,10 +117,20 @@ class Boot:
         self._maybe_exec()
 
     def _maybe_exec(self) -> None:
-        if self.total and all(self.disks):
-            assembled = "".join(self.disks)  # type: ignore[arg-type]
-            # Bootloader never hashes assembled vs self.root.
-            self.executed = assembled
+        if not (self.total and all(self.disks)):
+            return
+        assembled = "".join(self.disks)  # type: ignore[arg-type]
+        got = sha(assembled)
+        if self.root and got != self.root:
+            self.rejected = True
+            return
+        if self.require_pin and not self.pin:
+            self.rejected = True
+            return
+        if self.pin and self.pin != got:
+            self.rejected = True
+            return
+        self.executed = assembled
 
 
 def inflate(b64: str) -> bytes:
@@ -136,26 +160,31 @@ def survive(name: str, detail: str) -> None:
 
 def test_zero_byte() -> None:
     wasm = os.path.getsize(WASM) if os.path.exists(WASM) else 0
-    boot = os.path.getsize(BOOT)
-    js = os.path.getsize(os.path.join(ROOT, "Website", "wasm_exec.js"))
-    lay = os.path.getsize(os.path.join(ROOT, "Website", "lay_runtime.js"))
-    refute(
-        "zero-byte server hosting",
-        wasm > 4_000_000 and (boot + js + lay) > 30_000,
-        f"Website/ serves wasm.wasm={wasm}B plus bootloader {boot+js+lay}B",
-    )
+    if wasm > 4_000_000:
+        survive(
+            "brotli fallback wasm still on disk (~4.6MB)",
+            f"wasm.wasm={wasm}B — deflate path must not fetch it; README no longer claims zero-byte",
+        )
+    else:
+        refute("wasm.wasm still shipped", False, "file missing or tiny")
 
 
-def test_unconditional_wasm_js() -> None:
+def test_lazy_scripts() -> None:
     html = read(BOOT)
-    before = html.split("processarHash")[0]
-    refute(
-        "instant zero-WASM / zero dependencies downloaded",
-        '<script src="wasm_exec.js"></script>' in before
-        and '<script src="lay_runtime.js"></script>' in before,
-        "wasm_exec.js + lay_runtime.js load before any algo check; "
-        f"wasm.wasm still {os.path.getsize(WASM)} bytes on the server",
-    )
+    js = read(BOOT_JS)
+    if (
+        "wasm_exec.js" not in html
+        and "lay_runtime.js" not in html
+        and 'src="boot.js"' in html
+        and "loadScript('wasm_exec.js')" in js
+        and "loadScript('lay_runtime.js')" in js
+    ):
+        survive(
+            "deflate boot does not fetch WASM/LAY up front",
+            "index.html only loads boot.js; wasm_exec/lay_runtime are lazy",
+        )
+    else:
+        refute("lazy script loading", False, "unconditional wasm/lay still in index.html")
 
 
 def test_self_attestation() -> None:
@@ -165,11 +194,22 @@ def test_self_attestation() -> None:
     b.process(disk)
     body = inflate(b.executed or "")
     refute(
-        "NIST FIPS 180-4 integrity pinning / fail-closed attestation",
+        "hashes inside the fragment are a signature / trusted pin",
         b.executed is not None and b"PWNED-FORGED-PAYLOAD" in body,
-        "attacker who rewrites payload AND declared SHA-256 is accepted; "
-        "hashes live inside the untrusted fragment, not a trusted pin",
+        "without ?pin= from a trusted channel, rewrite+rehash still boots (checksum only)",
     )
+
+
+def test_query_pin_rejects_rewrite() -> None:
+    honest = pack_deflate(b"<html>honest</html>")[0]
+    evil = pack_deflate(b"<html>PWNED</html>")[0]
+    root = V2_RE.match(honest).group(5)
+    b = Boot(pin=root)
+    b.process(evil)
+    if b.rejected and b.executed is None:
+        survive("?pin=<root> rejects a rewritten self-consistent disk", f"pin={root[:16]}...")
+    else:
+        refute("query pin", False, f"rejected={b.rejected} executed={b.executed is not None}")
 
 
 def test_chunk_checksum_survives() -> None:
@@ -179,22 +219,13 @@ def test_chunk_checksum_survives() -> None:
     b = Boot()
     b.process(";".join(parts))
     if b.rejected and b.executed is None:
-        survive(
-            "chunk SHA-256 as a checksum (not a pin)",
-            "tamper without updating declared digest is rejected",
-        )
+        survive("chunk SHA-256 checksum", "stale digest rejected")
     else:
-        refute(
-            "chunk checksum actually rejects stale digest",
-            False,
-            f"rejected={b.rejected} executed={b.executed is not None}",
-        )
+        refute("chunk checksum", False, f"rejected={b.rejected}")
 
 
-def test_root_hash_never_checked() -> None:
-    html = read(BOOT)
-    assigns = len(re.findall(r"rootSha256Esperado\s*=", html))
-    compares = len(re.findall(r"rootSha256Esperado\s*[!=]==", html))
+def test_root_hash_checked() -> None:
+    js = read(BOOT_JS)
     disks = pack_deflate(b"<html>root-mismatch</html>", chunk_size=8)
     assert len(disks) > 1
     parts = disks[1].split(";", 5)
@@ -203,115 +234,90 @@ def test_root_hash_never_checked() -> None:
     b = Boot()
     for d in disks:
         b.process(d)
-    refute(
-        "tampered fragments fail closed on dataset root hash",
-        assigns >= 1 and compares == 0 and b.executed is not None,
-        f"rootSha256Esperado assigned {assigns}x, compared {compares}x; "
-        "mismatched per-disk root hashes still execute",
-    )
+    if "root_sha256 diverge" in js and b.rejected and b.executed is None:
+        survive("assembled/per-disk root SHA-256 fail-closed", "mismatched roots rejected")
+    else:
+        refute("root hash check", False, f"rejected={b.rejected} executed={b.executed is not None}")
 
 
 def test_raid0_is_concat() -> None:
     go = read(MAIN_GO)
-    refute(
-        "multi-disk virtual floppy RAID-0",
-        "chunkPayload := encodedData[start:end]" in go
-        and "RAID" in go
-        and "stripe" not in go.lower(),
-        "volumes are sequential slices of one base64 string (concat), "
-        "not RAID-0 striping, parity, or parallel disks",
-    )
+    rm = read(README)
+    if "chunkPayload := encodedData[start:end]" in go and "not RAID-0" in rm and "RAID-0" not in go:
+        survive("multi-volume concat", "packager slices Base64 sequentially; README says not RAID-0")
+    else:
+        refute("RAID-0 wording", False, "code or README still claims RAID-0")
 
 
 def test_lin_kernel_is_a_dump() -> None:
-    html = read(BOOT)
-    src = read(LIN)
+    js, src = read(BOOT_JS), read(LIN)
     refute(
-        "LIN sovereign kernel / heapless stack-only execution",
-        "renderLinPayload" in html
-        and "payloadObj.source" in html
-        and "LinVM" in html
-        and "0_BYTES" in html
-        and "function parseLin" not in html
-        and "@LIN:L1c" in src
-        and "eval(" not in html,
-        "bootloader prints .lin source in <pre>, waits 300ms, then forges "
-        "@RULEL:LIN_JIT_RUN receipts; no LIN parser or stack machine exists",
+        "LIN sovereign kernel / heapless VM",
+        "NAO interpreta LIN" in js
+        and "function parseLin" not in js
+        and "0_BYTES" not in js
+        and "@LIN:L1c" in src,
+        "bootloader is honest now, but still has no LIN interpreter",
     )
 
 
-def test_lin_oracle_ignores_division() -> None:
+def test_lin_oracle_divides() -> None:
     src = read(LIN)
-    refute(
-        "deterministic CPMM oracle (x*y=k)",
-        "_lia_ushr(numerator, 0)" in src
-        and "denominator" in src
-        and re.search(r"\^\s*_lia_ushr\(numerator,\s*0\)", src) is not None
-        and "numerator / denominator" not in src
-        and "numerator / denominator" not in src.replace(" ", ""),
-        "oracle computes denominator then returns USHR(numerator,0), i.e. numerator",
-    )
+    if "^ (numerator / denominator);" in src and "_lia_ushr(numerator, 0)" not in src:
+        survive("CPMM oracle formula", "source returns numerator/denominator (still not executed)")
+    else:
+        refute("oracle math", False, "division still missing")
 
 
-def test_defi_is_js_floats() -> None:
+def test_defi_is_js_demo() -> None:
     src = read(DEFI)
     refute(
-        "unstoppable LIN VM DeFi swapper",
-        "let reserveIn = 10000.0" in src
-        and "Date.now()" in src
-        and "numerator / denominator" in src
-        and "LIN VM Stack-Only" in src
-        and "Zero backend, zero DNS takeover risk" in src,
-        "swap is in-page JS floats + Date.now(); receipts are innerHTML strings, "
-        "not a kernel; bootloader origin remains a DNS/hosting trust root",
+        "on-chain / LIN-VM DeFi",
+        "let reserveIn = 10000.0" in src and "Date.now()" in src and "not a LIN VM" in src,
+        "still in-page JS floats; labels are honest, it is not a kernel",
     )
 
 
-def test_sandbox_not_isolated() -> None:
-    html = read(BOOT)
-    refute(
-        "executes the application in an isolated sandbox",
-        'sandbox", "allow-scripts allow-forms allow-same-origin allow-popups"' in html
-        and "iframe.srcdoc = htmlPuro" in html,
-        "srcdoc + allow-scripts + allow-same-origin lets payload script the parent "
-        "(HTML standard: combination can remove sandbox)",
-    )
+def test_sandbox_no_same_origin() -> None:
+    js = read(BOOT_JS)
+    has = "setAttribute('sandbox', 'allow-scripts allow-forms')" in js
+    if has and "allow-same-origin" not in js:
+        survive("iframe sandbox", "allow-scripts allow-forms only; opaque origin")
+    else:
+        refute("sandbox isolation", False, "allow-same-origin still present or sandbox missing")
 
 
-def test_v1_and_raw_have_no_integrity() -> None:
+def test_v1_raw_rejected() -> None:
     b1, b2 = Boot(), Boot()
     b1.process("v1;[1/1]AAAA")
     b2.process("not-even-a-header")
-    refute(
-        "every disk chunk is attested",
-        b1.executed == "AAAA" and b2.executed == "not-even-a-header",
-        "v1 and raw volumes skip SHA-256 entirely (default algo becomes brotli)",
+    if b1.rejected and b2.rejected and b1.executed is None and b2.executed is None:
+        survive("v1/raw default-deny", "need ?legacy=1 to boot unsigned volumes")
+    else:
+        refute("v1/raw deny", False, "legacy formats still execute")
+
+
+def test_floppy_audio() -> None:
+    js, rm = read(BOOT_JS), read(README)
+    if "square" in js and "5.25" not in rm and "sawtooth" not in js:
+        survive("disk insert click", "short square click; README does not claim 5.25\" synthesis")
+    else:
+        refute("audio marketing", False, "5.25\" claim or sawtooth still present")
+
+
+def test_readme_matches_boot() -> None:
+    rm, js = read(README), read(BOOT_JS)
+    ok = (
+        "?pin=" in rm
+        and "not a signature" in rm.lower()
+        and "assembledSha !== rootSha256Esperado" in js
+        and "Zero-Byte Server Hosting" not in rm
+        and "Tampered fragments fail closed immediately" not in rm
     )
-
-
-def test_floppy_audio_is_a_chirp() -> None:
-    html = read(BOOT)
-    refute(
-        "5.25\" floppy head-seek / stepper synthesis",
-        "sawtooth" in html
-        and "setValueAtTime(160" in html
-        and "exponentialRampToValueAtTime(30" in html
-        and "stepper" not in html.lower(),
-        "one 90ms 160→30 Hz sawtooth beep; no stepper pulse train or 5.25\" model",
-    )
-
-
-def test_readme_overclaims_vs_code() -> None:
-    rm, html = read(README), read(BOOT)
-    refute(
-        "README vs bootloader contract",
-        "Tampered fragments fail closed immediately" in rm
-        and "Zero-Byte Server Hosting" in rm
-        and "rootSha256Esperado" in html
-        and "calcSha256(payloadCompleto)" not in html
-        and "calcSha256(payloadString)" not in html,
-        "README promises fail-closed root pinning; bootloader never hashes the assembly",
-    )
+    if ok:
+        survive("README vs bootloader", "checksum + optional pin; no zero-byte/attestation marketing")
+    else:
+        refute("README honesty", False, "marketing leftover or pin/root missing")
 
 
 def test_deflate_roundtrip_survives() -> None:
@@ -324,7 +330,6 @@ def test_deflate_roundtrip_survives() -> None:
 
 
 def test_go_packager_forge() -> None:
-    """Real packager output can be rewritten into a still-valid v2 disk."""
     out = os.path.join(ROOT, "test_run_refute")
     cmd = [
         "go", "run", "main.go", "lay_compiler.go",
@@ -332,50 +337,55 @@ def test_go_packager_forge() -> None:
     ]
     res = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     if res.returncode != 0:
-        refute("packager-forged attested disk", False, res.stderr[-400:])
+        refute("packager", False, res.stderr[-400:])
         return
     original = read(os.path.join(out, "disk_01.txt"))
     forged_html = read(os.path.join(ROOT, "examples", "demo.html")).replace(
         "FloppyURL v2.0 Operacional", "PWNED via recomputed hashes"
     )
     forged = pack_deflate(forged_html.encode("utf-8"))[0]
-    b_ok, b_evil = Boot(), Boot()
-    b_ok.process(original)
-    b_evil.process(forged)
+    honest_root = V2_RE.match(original).group(5)
+    b_open, b_pinned = Boot(), Boot(pin=honest_root)
+    b_open.process(forged)
+    b_pinned.process(forged)
     refute(
-        "attested packager disks cannot be replaced",
-        b_ok.executed is not None and b_evil.executed is not None
-        and b"PWNED via recomputed hashes" in inflate(b_evil.executed),
-        "honest disk and rewritten disk both satisfy the v2 regex + chunk digest",
+        "self-checksum without pin is authorship",
+        b_open.executed is not None and b"PWNED via recomputed hashes" in inflate(b_open.executed),
+        "rewritten packager-shaped disk still boots when the URL has no trusted pin",
     )
+    if b_pinned.rejected and b_pinned.executed is None:
+        survive("packager pin in ?pin= binds boot to that root", honest_root[:16] + "...")
+    else:
+        refute("packager pin", False, "forged disk executed against honest pin")
     shutil.rmtree(out, ignore_errors=True)
 
 
 def main() -> int:
-    print("=== FloppyURL claim refutation ===")
+    print("=== FloppyURL claim refutation (post-hardening) ===")
     tests = [
         test_zero_byte,
-        test_unconditional_wasm_js,
+        test_lazy_scripts,
         test_self_attestation,
+        test_query_pin_rejects_rewrite,
         test_chunk_checksum_survives,
-        test_root_hash_never_checked,
+        test_root_hash_checked,
         test_raid0_is_concat,
         test_lin_kernel_is_a_dump,
-        test_lin_oracle_ignores_division,
-        test_defi_is_js_floats,
-        test_sandbox_not_isolated,
-        test_v1_and_raw_have_no_integrity,
-        test_floppy_audio_is_a_chirp,
-        test_readme_overclaims_vs_code,
+        test_lin_oracle_divides,
+        test_defi_is_js_demo,
+        test_sandbox_no_same_origin,
+        test_v1_raw_rejected,
+        test_floppy_audio,
+        test_readme_matches_boot,
         test_deflate_roundtrip_survives,
         test_go_packager_forge,
     ]
     for fn in tests:
         fn()
     print("--------------------------------------------------")
-    print(f"Refuted: {passed}  |  Not refuted: {failed}  |  Survived: {len(survived)}")
+    print(f"Still overclaimed: {passed}  |  Broken checks: {failed}  |  Fixed/honest: {len(survived)}")
     for s in survived:
-        print(f"  survived: {s}")
+        print(f"  honest: {s}")
     return 0 if failed == 0 else 1
 
 

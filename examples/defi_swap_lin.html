@@ -195,7 +195,7 @@
     <div class="metric-row"><span>Exchange Rate:</span> <span id="rate">1 LIN ≈ 2.50 USDC</span></div>
     <div class="metric-row"><span>Liquidity Provider Fee (0.3%):</span> <span id="fee">0.030 LIN</span></div>
     <div class="metric-row"><span>Slippage Impact:</span> <span id="slippage">0.10%</span></div>
-    <div class="metric-row"><span>Deterministic Engine:</span> <span>LIN VM Stack-Only</span></div>
+    <div class="metric-row"><span>Engine:</span> <span>in-page JavaScript (demo CPMM)</span></div>
   </div>
 
   <button class="btn-swap" id="swapBtn">Execute Deterministic Swap</button>
@@ -203,7 +203,7 @@
   <div class="receipt" id="receiptBox"></div>
 
   <div class="footer">
-    Hosted 100% via FloppyURL URI Hash. Zero backend, zero DNS takeover risk.
+    Hosted via FloppyURL hash + bootloader origin. Checksums are not a DNS-proof pin.
   </div>
 </div>
 
@@ -271,11 +271,10 @@
     const txHash = await sha256(txPayload);
 
     receiptBox.style.display = 'block';
-    receiptBox.innerHTML = `> TRANSACTION COMMITTED TO LIN DISPUTE KERNEL<br>` +
+    receiptBox.innerHTML = `> local JS swap (not a chain, not a LIN VM)<br>` +
       `  TXID: sha256:${txHash}<br>` +
       `  DELTA: -${dx.toFixed(2)} LIN / +${dy.toFixed(2)} USDC<br>` +
-      `  PROOF: @RULEL:SWAP_RECEIPT:1.0.0<br>` +
-      `  STATUS: ATTESTED_VALID (0 LEAKS, DETERMINISTIC)`;
+      `  NOTE: Date.now() makes this receipt non-deterministic`;
     receiptBox.scrollTop = receiptBox.scrollHeight;
 
     recalc();

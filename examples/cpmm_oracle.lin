@@ -21,8 +21,7 @@
   dx_with_fee = dx * 997;
   numerator = reserve_out * dx_with_fee;
   denominator = (reserve_in * 1000) + dx_with_fee;
-  
-  ^ _lia_ushr(numerator, 0); // integer division checked
+  ^ (numerator / denominator);
 }
 
 !verify_invariants(prev_k: int, new_k: int) -> int {

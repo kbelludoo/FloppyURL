@@ -58,9 +58,9 @@ demo-lay:
 	@echo "==> Gerando payload LAY DSL (Bytecode UI)..."
 	go run main.go lay_compiler.go -file examples/floppyurl_lay.lay -algo deflate -out-dir disks_lay
 
-# Gerar simulação RAID-0 multi-disco (chunks pequenos)
+# Gerar simulacao multi-volume (chunks pequenos)
 demo-raid:
-	@echo "==> Gerando payload RAID-0 particionado..."
+	@echo "==> Gerando payload multi-volume concatenado..."
 	go run main.go lay_compiler.go -file examples/demo.html -algo deflate -chunk-size 400 -out-dir disks_multidisk
 
 # Iniciar servidor local para testes

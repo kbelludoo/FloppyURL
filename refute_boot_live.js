@@ -1,16 +1,20 @@
 'use strict';
-// Live probe: run the bootloader's own regex + WebCrypto + DecompressionStream.
+// Probe: boot.js regexV2 + WebCrypto + DecompressionStream.
 const fs = require('fs');
+const path = require('path');
 const html = fs.readFileSync(process.argv[2], 'utf8');
 const disk = process.argv[3];
 const marker = process.argv[4];
+const bootJsPath = path.join(path.dirname(process.argv[2]), 'boot.js');
+const js = fs.readFileSync(bootJsPath, 'utf8');
+const src = html + '\n' + js;
 
-const extracted = html.match(/regexV2 = (\/\^v2;.*?\$\/);/);
+const extracted = js.match(/regexV2 = (\/\^v2;.*?\$\/);/);
 if (!extracted) {
-  console.log(JSON.stringify({ ok: false, error: 'regexV2 missing in index.html' }));
+  console.log(JSON.stringify({ ok: false, error: 'regexV2 missing in boot.js' }));
   process.exit(1);
 }
-const regexV2 = eval(extracted[1]); // the literal copied from Website/index.html
+const regexV2 = eval(extracted[1]);
 
 (async () => {
   const match = disk.match(regexV2);
@@ -34,9 +38,11 @@ const regexV2 = eval(extracted[1]); // the literal copied from Website/index.htm
     ok: hex === declared && text.includes(marker),
     selfAttested: hex === declared,
     markerInPayload: text.includes(marker),
-    sandboxCombo: html.includes('allow-scripts allow-forms allow-same-origin allow-popups'),
-    rootHashCompared: /rootSha256Esperado\s*[!=]==/.test(html),
-    linExecutesSource: html.includes('payloadObj.source') && !html.includes('function parseLin'),
+    sandboxHasSameOrigin: js.includes('allow-same-origin'),
+    sandboxAllowScriptsForms: js.includes("sandbox', 'allow-scripts allow-forms'"),
+    rootHashCompared: /assembledSha !== rootSha256Esperado/.test(js),
+    pinSupported: js.includes("q.get('pin')"),
+    linIsDisplayOnly: js.includes('NAO interpreta LIN'),
   }));
 })().catch((e) => {
   console.log(JSON.stringify({ ok: false, error: String(e) }));

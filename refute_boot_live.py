@@ -56,6 +56,33 @@ def _port_open(port: int) -> bool:
         return False
 
 
+def chrome_dump(url: str, port: int, server: subprocess.Popen | None) -> dict:
+    user_data = tempfile.mkdtemp(prefix="refute-chrome-")
+    cmd = [
+        CHROME, "--headless=old", "--no-sandbox", "--disable-gpu",
+        "--disable-dev-shm-usage", f"--user-data-dir={user_data}",
+        "--virtual-time-budget=4000", "--timeout=8000", "--dump-dom", url,
+    ]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        stdout, stderr = proc.communicate(timeout=14)
+        rc = proc.returncode
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate()
+        rc = -9
+    shutil.rmtree(user_data, ignore_errors=True)
+    dom = stdout or ""
+    return {
+        "ok": MARKER in dom,
+        "sandbox_escaped": "<title>SANDBOX_ESCAPED</title>" in dom,
+        "fail_closed": "FAIL-CLOSED" in dom,
+        "dom_bytes": len(dom),
+        "rc": rc,
+        "title": next((ln for ln in dom.splitlines() if "<title>" in ln.lower()), ""),
+    }
+
+
 def refute_with_chrome(disk: str) -> dict:
     if not CHROME:
         return {"skipped": True, "reason": "no chrome"}
@@ -72,32 +99,13 @@ def refute_with_chrome(disk: str) -> dict:
         )
         time.sleep(0.3)
 
-    url = f"http://127.0.0.1:{port}/#" + disk
-    user_data = tempfile.mkdtemp(prefix="refute-chrome-")
-    cmd = [
-        CHROME, "--headless=old", "--no-sandbox", "--disable-gpu",
-        "--disable-dev-shm-usage", f"--user-data-dir={user_data}",
-        "--virtual-time-budget=4000", "--timeout=8000", "--dump-dom", url,
-    ]
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-    try:
-        stdout, stderr = proc.communicate(timeout=14)
-        rc = proc.returncode
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        stdout, stderr = proc.communicate()
-        rc = -9
+    open_url = f"http://127.0.0.1:{port}/#" + disk
+    pinned_url = f"http://127.0.0.1:{port}/?pin={'0'*64}#" + disk
+    opened = chrome_dump(open_url, port, server)
+    pinned = chrome_dump(pinned_url, port, server)
     if server:
         server.kill()
-    shutil.rmtree(user_data, ignore_errors=True)
-    dom = stdout or ""
-    return {
-        "ok": MARKER in dom,
-        "sandbox_escaped": "SANDBOX_ESCAPED" in dom,
-        "dom_bytes": len(dom),
-        "rc": rc,
-        "title": next((ln for ln in dom.splitlines() if "<title>" in ln.lower()), ""),
-    }
+    return {"no_pin": opened, "wrong_pin": pinned}
 
 
 def main() -> int:
@@ -106,21 +114,29 @@ def main() -> int:
     chrome = refute_with_chrome(disk)
     print(json.dumps({"node": node, "chrome": chrome}, indent=2))
     rc = 0
-    if node.get("ok"):
-        print("[REFUTED] live Node: regexV2 + WebCrypto + DecompressionStream accept a forged disk")
+    if node.get("ok") and node.get("rootHashCompared") and not node.get("sandboxHasSameOrigin"):
+        print("[OK] node: checksum path still inflates; root compare present; no allow-same-origin")
+    elif node.get("ok"):
+        print("[OK] node: forged self-checksum still inflates (expected without pin)")
     else:
-        print("[NOT-REFUTED] node path:", node)
+        print("[FAIL] node path:", node)
         rc = 1
     if chrome.get("skipped"):
         print("[SKIP] chrome not available")
-    elif chrome.get("ok"):
-        print("[REFUTED] live Chrome executed forged HTML (marker in dump-dom)")
-        if chrome.get("sandbox_escaped"):
-            print("[REFUTED] live Chrome: payload set parent.document.title=SANDBOX_ESCAPED")
+        return rc
+    opened, pinned = chrome.get("no_pin") or {}, chrome.get("wrong_pin") or {}
+    if opened.get("ok") and not opened.get("sandbox_escaped"):
+        print("[OK] chrome: no-pin forged disk still runs (checksum-only) AND sandbox held parent title")
+    elif opened.get("sandbox_escaped"):
+        print("[FAIL] chrome sandbox: parent title rewritten")
+        rc = 1
     else:
-        print("[WEAK] chrome path:", chrome)
-        if rc == 0:
-            print("(Node path already refuted the cryptographic claim)")
+        print("[WEAK] chrome no-pin:", opened)
+    if pinned.get("fail_closed") and not pinned.get("ok"):
+        print("[OK] chrome: wrong ?pin= fail-closed, forged HTML not injected")
+    else:
+        print("[FAIL] chrome pin:", pinned)
+        rc = 1
     return rc
 
 

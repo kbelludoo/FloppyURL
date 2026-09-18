@@ -576,7 +576,12 @@
 
     // CONFIGURAÇÃO DO SERVIDOR CLOUD PACKAGER / SEARCH (24/7 PERMANENTE VIA CLOUDFLARE WORKER)
     const DEFAULT_SERVER = 'https://pocketweb.kbelludoo.workers.dev';
-    let serverUrl = localStorage.getItem('pocketweb_server') || DEFAULT_SERVER;
+    let savedServer = localStorage.getItem('pocketweb_server');
+    if (savedServer && (savedServer.includes('trycloudflare.com') || savedServer.includes('localhost'))) {
+      localStorage.removeItem('pocketweb_server');
+      savedServer = null;
+    }
+    let serverUrl = savedServer || DEFAULT_SERVER;
 
     // MONITOR DE CONEXÃO
     function updateNetStatus() {
@@ -824,20 +829,38 @@
         } catch(e) {}
       }
 
-      // 2. Tenta pelo servidor Cloud Colab
+      // 2. Tenta pelo servidor Cloudflare Worker / Packager
       try {
         const endpoint = `${serverUrl}/pack?url=${encodeURIComponent(targetUrl)}`;
         const resp = await fetch(endpoint);
         if (resp.ok) {
-          const data = await resp.json();
-          if (data.boot_url) {
-            const hash = data.boot_url.includes('#') ? data.boot_url.split('#')[1] : data.boot_url;
+          const contentType = resp.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            const data = await resp.json();
+            if (data.boot_url) {
+              const hash = data.boot_url.includes('#') ? data.boot_url.split('#')[1] : data.boot_url;
+              window.location.hash = hash;
+              await processarPayload(hash, targetUrl);
+              return;
+            }
+          } else {
+            const html = await resp.text();
+            let docTitle = targetUrl;
+            const match = html.match(/<title>([^<]+)<\/title>/i);
+            if (match) docTitle = match[1];
+
+            const compBytes = await compressNative(html, 'deflate-raw');
+            const b64 = uint8ArrayToBase64Url(compBytes);
+            const sha = await calcSha256(b64);
+            const hash = `#v2;deflate;[1/1];${sha};${sha};${b64}`;
             window.location.hash = hash;
-            await processarPayload(hash, targetUrl);
+            abrirViewer(docTitle, html, html.length, compBytes.length, hash, targetUrl);
             return;
           }
         }
-      } catch (err) {}
+      } catch (err) {
+        console.error("Erro pack worker:", err);
+      }
 
       // 3. Fallback inteligente via CORS Proxy
       try {

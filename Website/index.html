@@ -698,25 +698,29 @@
       currentRemoteURL = targetUrl;
       showToast('⚡ Carregando página para leitura remota...');
 
-      // 1. Caso especial: Wikipédia (API REST oficial direta com CORS nativo)
+      // 1. Caso especial: Wikipédia (Action API oficial com origin=* e CORS 100% livre)
       if (targetUrl.includes('wikipedia.org/wiki/')) {
         try {
           const parts = targetUrl.split('/wiki/');
           const title = parts[1];
           const lang = targetUrl.includes('pt.wikipedia') ? 'pt' : 'en';
-          const apiUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/html/${encodeURIComponent(title)}`;
+          const apiUrl = `https://${lang}.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(title)}&prop=text&format=json&origin=*`;
           const resp = await fetch(apiUrl);
           if (resp.ok) {
-            let html = await resp.text();
-            const injection = `<base href="${targetUrl}"><style>body{font-family:-apple-system,sans-serif;line-height:1.6;padding:16px;max-width:800px;margin:auto;color:#202124;background:#fff;}</style><script>document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href&&!a.href.startsWith('javascript:')&&!a.href.startsWith('#')){e.preventDefault();window.parent.postMessage({type:'POCKET_NAV',url:a.href},'*');}});<\/script>`;
-            html = html.replace('<head>', '<head>' + injection);
-            const compBytes = await compressNative(html, 'deflate-raw');
-            const b64 = uint8ArrayToBase64Url(compBytes);
-            const sha = await calcSha256(b64);
-            const hash = `#v2;deflate;[1/1];${sha};${sha};${b64}`;
-            window.location.hash = hash;
-            abrirViewer(decodeURIComponent(title.replace(/_/g, ' ')), html, html.length, compBytes.length, hash, targetUrl);
-            return;
+            const data = await resp.json();
+            if (data && data.parse && data.parse.text) {
+              const bodyContent = data.parse.text['*'];
+              const displayTitle = data.parse.title || decodeURIComponent(title.replace(/_/g, ' '));
+              const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${displayTitle}</title><base href="${targetUrl}"><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.6;padding:20px;max-width:820px;margin:auto;color:#1f2937;background:#fff;}img{max-width:100%;height:auto;}a{color:#1a73e8;}table{border-collapse:collapse;width:100%;}th,td{border:1px solid #e5e7eb;padding:8px;}</style><script>document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href&&!a.href.startsWith('javascript:')&&!a.href.startsWith('#')){e.preventDefault();window.parent.postMessage({type:'POCKET_NAV',url:a.href},'*');}});<\/script></head><body><h1>${displayTitle}</h1><hr style="margin-bottom:16px;border:none;border-top:1px solid #e5e7eb;">${bodyContent}</body></html>`;
+
+              const compBytes = await compressNative(html, 'deflate-raw');
+              const b64 = uint8ArrayToBase64Url(compBytes);
+              const sha = await calcSha256(b64);
+              const hash = `#v2;deflate;[1/1];${sha};${sha};${b64}`;
+              window.location.hash = hash;
+              abrirViewer(displayTitle, html, html.length, compBytes.length, hash, targetUrl);
+              return;
+            }
           }
         } catch(e) {}
       }

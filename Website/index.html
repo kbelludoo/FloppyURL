@@ -881,7 +881,7 @@
         }
       } catch(e) {}
 
-      alert("Não foi possível carregar a página no momento.\nVerifique se o seu servidor Colab está online.");
+      showToast('⚠️ Não foi possível carregar esta página. Tente outra URL ou busque por palavras-chave.');
     }
 
     // --- DESCOMPRESSÃO DE PAYLOAD #v2;... ---
@@ -987,7 +987,7 @@
           });
         } catch(e) {}
 
-        // 2. Tenta buscar no Colab Search Server (se túnel estiver online com /search)
+        // 2. Tenta buscar via Cloudflare Worker 24/7 (pocketweb.kbelludoo.workers.dev/search)
         try {
           const resp = await fetch(`${serverUrl}/search?q=${encodeURIComponent(query)}`);
           if (resp.ok) {

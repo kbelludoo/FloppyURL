@@ -420,6 +420,7 @@
     <div id="net-status" class="status-badge">
       <span style="font-size: 8px;">●</span> Online
     </div>
+    <button class="btn-icon" id="btn-benchmark" title="Duelo e Benchmark dos 100 Maiores Sites">📊</button>
     <button class="btn-icon" id="btn-library" title="Minha Biblioteca Offline (Páginas Salvas)">💾</button>
     <button class="btn-icon" id="btn-theme" title="Modo Solar / Noturno">🌓</button>
   </header>
@@ -451,6 +452,7 @@
 
     <!-- ATALHOS RÁPIDOS DE CAMPO -->
     <div class="quick-chips" id="quick-chips">
+      <div class="chip" onclick="openBenchmarkModal()" style="border-color: #34a853; color: #188038; font-weight: 600;">📊 Prova Real: 100 Sites (-98%)</div>
       <div class="chip" onclick="abrirSiteRemoto('https://www.google.com')">🌐 Abrir Google Direto</div>
       <div class="chip" onclick="quickSearch('g1 ultimas noticias')">📰 Notícias de Hoje</div>
       <div class="chip" onclick="quickSearch('previsao do tempo')">⛅ Previsão do Tempo</div>
@@ -485,11 +487,81 @@
     <iframe id="content-frame" sandbox="allow-scripts allow-forms allow-same-origin allow-popups"></iframe>
   </div>
 
+  <!-- MODAL DE BENCHMARK DOS 100 SITES -->
+  <div id="benchmark-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.6); z-index:2000; align-items:center; justify-content:center; backdrop-filter:blur(3px);">
+    <div style="background:var(--surface); border:1px solid var(--surface-border); border-radius:12px; width:92%; max-width:850px; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 12px 36px rgba(0,0,0,0.3);">
+      
+      <!-- Cabeçalho -->
+      <div style="padding:16px 20px; border-bottom:1px solid var(--surface-border); display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <h2 style="margin:0; font-size:18px; display:flex; align-items:center; gap:8px;">📊 Prova Real: Benchmark dos 100 Maiores Sites</h2>
+          <span style="font-size:12px; color:var(--text-muted);">Coleta de tráfego real com navegador Brave (Normal vs PocketWeb)</span>
+        </div>
+        <button class="btn-icon" onclick="closeBenchmarkModal()" style="font-size:18px;">✕</button>
+      </div>
+
+      <!-- KPI Cards -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; padding:14px 20px; background:rgba(26,115,232,0.04); border-bottom:1px solid var(--surface-border);">
+        <div style="background:var(--surface); border:1px solid var(--surface-border); border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:20px; font-weight:700; color:#188038;">98,4%</div>
+          <div style="font-size:11px; color:var(--text-muted);">Economia Total de Dados</div>
+        </div>
+        <div style="background:var(--surface); border:1px solid var(--surface-border); border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:18px; font-weight:700; color:#1a73e8;">215 MB ➔ 3,5 MB</div>
+          <div style="font-size:11px; color:var(--text-muted);">100 Páginas Inteiras</div>
+        </div>
+        <div style="background:var(--surface); border:1px solid var(--surface-border); border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:20px; font-weight:700; color:#ea4335;">61x Mais Rápido</div>
+          <div style="font-size:11px; color:var(--text-muted);">Em 2G/Satélite (10h ➔ 9min)</div>
+        </div>
+        <div style="background:var(--surface); border:1px solid var(--surface-border); border-radius:8px; padding:10px; text-align:center;">
+          <div style="font-size:20px; font-weight:700; color:#f29900;">$ 1.059</div>
+          <div style="font-size:11px; color:var(--text-muted);">Salvos em Satélite ($5/MB)</div>
+        </div>
+      </div>
+
+      <!-- Filtro e Ações de Download -->
+      <div style="padding:12px 20px; display:flex; justify-content:space-between; align-items:center; gap:12px; border-bottom:1px solid var(--surface-border); flex-wrap:wrap;">
+        <input type="text" id="bm-search" placeholder="🔍 Filtrar por site ou tema (ex: g1, unicef, saude, clima)..." style="flex:1; min-width:200px; padding:8px 14px; border-radius:20px; border:1px solid var(--surface-border); background:var(--bg); color:var(--text); font-size:13px; outline:none;" />
+        <div style="display:flex; gap:8px;">
+          <a href="benchmark_100_sites.csv" download class="btn-google" style="text-decoration:none; padding:6px 12px; font-size:12px; display:inline-flex; align-items:center; gap:4px;">📥 CSV</a>
+          <a href="benchmark_100_sites.json" download class="btn-google" style="text-decoration:none; padding:6px 12px; font-size:12px; display:inline-flex; align-items:center; gap:4px;">📥 JSON</a>
+        </div>
+      </div>
+
+      <!-- Tabela com scroll -->
+      <div style="flex:1; overflow-y:auto; padding:0 20px;">
+        <table style="width:100%; border-collapse:collapse; font-size:13px; text-align:left;">
+          <thead style="position:sticky; top:0; background:var(--surface); z-index:10; border-bottom:2px solid var(--surface-border);">
+            <tr>
+              <th style="padding:10px 8px;">#</th>
+              <th style="padding:10px 8px;">Site / URL</th>
+              <th style="padding:10px 8px;">Web Normal</th>
+              <th style="padding:10px 8px;">PocketWeb</th>
+              <th style="padding:10px 8px;">Economia</th>
+              <th style="padding:10px 8px; text-align:center;">Ação</th>
+            </tr>
+          </thead>
+          <tbody id="bm-table-body">
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Rodapé -->
+      <div style="padding:10px 20px; border-top:1px solid var(--surface-border); display:flex; justify-content:space-between; align-items:center; font-size:12px; color:var(--text-muted);">
+        <span id="bm-count">Exibindo 100 de 100 sites</span>
+        <button class="btn-google" onclick="closeBenchmarkModal()" style="padding:5px 14px; font-size:12px;">Fechar</button>
+      </div>
+
+    </div>
+  </div>
+
   <!-- TOAST FEEDBACK -->
   <div id="toast"></div>
 
-  <!-- SUPORTE A WASM (BROTLI) -->
+  <!-- SUPORTE A WASM (BROTLI) E DADOS DE BENCHMARK -->
   <script src="wasm_exec.js"></script>
+  <script src="benchmark_data.js"></script>
 
   <!-- MOTOR POCKETWEB -->
   <script>
@@ -1039,6 +1111,57 @@
       };
       abrirViewer(titles[key], html, html.length, Math.round(html.length * 0.3), '#sample_' + key);
     }
+
+    // --- BENCHMARK MODAL (PROVA REAL 100 SITES) ---
+    function openBenchmarkModal() {
+      const modal = document.getElementById('benchmark-modal');
+      modal.style.display = 'flex';
+      renderBenchmarkTable('');
+    }
+
+    function closeBenchmarkModal() {
+      document.getElementById('benchmark-modal').style.display = 'none';
+    }
+
+    function renderBenchmarkTable(filter) {
+      const tbody = document.getElementById('bm-table-body');
+      const countEl = document.getElementById('bm-count');
+      tbody.innerHTML = '';
+
+      if (typeof BENCHMARK_DATA === 'undefined' || !Array.isArray(BENCHMARK_DATA)) {
+        tbody.innerHTML = '<tr><td colspan="6" style="padding:20px; text-align:center; color:var(--text-muted);">Dados de benchmark indisponíveis no momento.</td></tr>';
+        return;
+      }
+
+      const q = (filter || '').toLowerCase().trim();
+      const filtered = BENCHMARK_DATA.filter(item => !q || item.url.toLowerCase().includes(q));
+
+      countEl.innerText = `Exibindo ${filtered.length} de ${BENCHMARK_DATA.length} sites coletados com dados reais`;
+
+      filtered.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid var(--surface-border)';
+        const displayUrl = item.url.replace(/^https?:\/\/(www\.)?/, '');
+        tr.innerHTML = `
+          <td style="padding:8px; color:var(--text-muted); font-size:11px;">${item.index}</td>
+          <td style="padding:8px; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            <a href="${item.url}" target="_blank" rel="noopener" style="color:var(--link); text-decoration:none; font-weight:500;">${displayUrl}</a>
+          </td>
+          <td style="padding:8px; color:var(--text-muted);">${item.normal_kb.toFixed(1)} KB</td>
+          <td style="padding:8px; color:#188038; font-weight:600;">${item.pocket_kb.toFixed(1)} KB</td>
+          <td style="padding:8px;"><span class="savings-badge" style="background:#065f46; color:#34d399;">-${item.savings_pct}%</span></td>
+          <td style="padding:8px; text-align:center;">
+            <button class="btn-pack-open" onclick="closeBenchmarkModal(); abrirSiteRemoto('${item.url}')" style="padding:3px 8px; font-size:11px;">⚡ Abrir</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    document.getElementById('btn-benchmark').onclick = openBenchmarkModal;
+    document.getElementById('bm-search').addEventListener('input', (e) => {
+      renderBenchmarkTable(e.target.value);
+    });
 
     // BOOT INICIAL
     window.onload = async () => {

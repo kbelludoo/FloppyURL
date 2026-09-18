@@ -1,9 +1,11 @@
 // PocketWeb Service Worker - Network-First com Fallback Offline Resiliente
-const CACHE_NAME = 'pocketweb-v3.2';
+const CACHE_NAME = 'pocketweb-v3.3';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './manifest.json',
+  './benchmark_data.js',
+  './benchmark_100_sites.csv',
   './wasm_exec.js',
   './wasm.wasm'
 ];

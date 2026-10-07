@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/Xelckis/floppyURL/pkg/server"
 	"github.com/andybalholm/brotli"
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/css"
@@ -110,16 +111,26 @@ func sha256Hex(data []byte) string {
 }
 
 
-func main() {
-	inputFile := flag.String("file", "", "Caminho para o arquivo HTML ou LIN de entrada (obrigatorio)")
-	algo := flag.String("algo", "deflate", "Algoritmo de compressao: deflate (instant zero-wasm default), brotli (max ratio), gzip")
-	chunkSize := flag.Int("chunk-size", 1800000, "Tamanho maximo por disquete em caracteres (default: 1800000)")
-	outputDir := flag.String("out-dir", "disks", "Diretorio para salvar os disquetes gerados")
-	v1Compat := flag.Bool("v1", false, "Emitir formato legado v1 (sem hashes de integridade)")
-	flag.Parse()
+type PackOptions struct {
+	InputFile string
+	Algo      string
+	ChunkSize int
+	OutputDir string
+	V1Compat  bool
+}
 
-	if *inputFile == "" {
-		log.Fatal("Uso: go run main.go -file <arquivo.html|arquivo.lin> [-algo deflate|brotli] [-chunk-size 1800000]")
+func RunPack(opts PackOptions) (*DiskManifest, string, error) {
+	if opts.InputFile == "" {
+		return nil, "", fmt.Errorf("caminho de arquivo obrigatorio")
+	}
+	if opts.Algo == "" {
+		opts.Algo = "deflate"
+	}
+	if opts.ChunkSize <= 0 {
+		opts.ChunkSize = 1800000
+	}
+	if opts.OutputDir == "" {
+		opts.OutputDir = "disks"
 	}
 
 	fmt.Println("==================================================")
@@ -129,20 +140,20 @@ func main() {
 	m := minify.New()
 	LoadMinifiers(m)
 
-	rawContent, err := os.ReadFile(*inputFile)
+	rawContent, err := os.ReadFile(opts.InputFile)
 	if err != nil {
-		log.Fatalf("Erro ao abrir arquivo de entrada: %v\n", err)
+		return nil, "", fmt.Errorf("erro ao abrir arquivo de entrada: %w", err)
 	}
 	originalSize := len(rawContent)
-	fmt.Printf("[1/5] Arquivo lido: %s (%d bytes)\n", *inputFile, originalSize)
+	fmt.Printf("[1/5] Arquivo lido: %s (%d bytes)\n", opts.InputFile, originalSize)
 
 	var payloadBytes []byte
-	ext := filepath.Ext(*inputFile)
+	ext := filepath.Ext(opts.InputFile)
 	if ext == ".lin" || ext == ".linbc1" {
 		fmt.Printf("    -> Detectado arquivo LIN deterministico (%s)\n", ext)
 		linWrapper := map[string]interface{}{
 			"type":     "lin",
-			"filename": filepath.Base(*inputFile),
+			"filename": filepath.Base(opts.InputFile),
 			"source":   string(rawContent),
 		}
 		wrapperJSON, _ := json.Marshal(linWrapper)
@@ -154,7 +165,7 @@ func main() {
 		if ext == ".lay" {
 			compiled, err := CompileLAY(rawContent)
 			if err != nil {
-				log.Fatalf("Erro na compilacao LAY: %v\n", err)
+				return nil, "", fmt.Errorf("erro na compilacao LAY: %w", err)
 			}
 			layBytecode = compiled
 			fmt.Printf("    -> Compilacao LAY: %d bytes source -> %d bytes bytecode (reducao: %.1f%%)\n",
@@ -166,7 +177,7 @@ func main() {
 
 		layWrapper := map[string]interface{}{
 			"type":     "lay",
-			"filename": filepath.Base(*inputFile),
+			"filename": filepath.Base(opts.InputFile),
 			"bytecode": base64.RawURLEncoding.EncodeToString(layBytecode),
 		}
 		wrapperJSON, _ := json.Marshal(layWrapper)
@@ -187,15 +198,15 @@ func main() {
 	}
 	fmt.Printf("[2/5] Minificacao concluida: %d bytes (reducao: %.2f%%)\n", len(minifiedBytes), reduction)
 
-	compressedBytes, err := compressPayload(minifiedBytes, *algo)
+	compressedBytes, err := compressPayload(minifiedBytes, opts.Algo)
 	if err != nil {
-		log.Fatalf("Falha na compressao [%s]: %v\n", *algo, err)
+		return nil, "", fmt.Errorf("falha na compressao [%s]: %w", opts.Algo, err)
 	}
 	ratio := 1.0
 	if len(compressedBytes) > 0 {
 		ratio = float64(originalSize) / float64(len(compressedBytes))
 	}
-	fmt.Printf("[3/5] Compressao [%s]: %d bytes (taxa: %.2fx menor)\n", *algo, len(compressedBytes), ratio)
+	fmt.Printf("[3/5] Compressao [%s]: %d bytes (taxa: %.2fx menor)\n", opts.Algo, len(compressedBytes), ratio)
 
 	encodedData := base64.RawURLEncoding.EncodeToString(compressedBytes)
 	encodedLen := len(encodedData)
@@ -203,18 +214,18 @@ func main() {
 
 	rootHash := sha256Hex([]byte(encodedData))
 
-	if err := os.MkdirAll(*outputDir, 0755); err != nil {
-		log.Fatalf("Erro ao criar diretorio de saida: %v\n", err)
+	if err := os.MkdirAll(opts.OutputDir, 0755); err != nil {
+		return nil, "", fmt.Errorf("erro ao criar diretorio de saida: %w", err)
 	}
 
-	totalDisks := (encodedLen + *chunkSize - 1) / *chunkSize
+	totalDisks := (encodedLen + opts.ChunkSize - 1) / opts.ChunkSize
 	if totalDisks == 0 {
 		totalDisks = 1
 	}
 
 	manifest := DiskManifest{
-		SourceFile:      filepath.Base(*inputFile),
-		Algorithm:       *algo,
+		SourceFile:      filepath.Base(opts.InputFile),
+		Algorithm:       opts.Algo,
 		OriginalBytes:   originalSize,
 		MinifiedBytes:   len(minifiedBytes),
 		CompressedBytes: len(compressedBytes),
@@ -224,18 +235,18 @@ func main() {
 		DiskHashes:      make([]string, 0, totalDisks),
 		FormatVersion:   "v2",
 	}
-	if *v1Compat {
+	if opts.V1Compat {
 		manifest.FormatVersion = "v1"
 	}
 
-	fmt.Printf("[5/5] Gerando %d volume(s) RAID-0 (tamanho max por disco: %d bytes)...\n", totalDisks, *chunkSize)
+	fmt.Printf("[5/5] Gerando %d volume(s) RAID-0 (tamanho max por disco: %d bytes)...\n", totalDisks, opts.ChunkSize)
 
 	var firstDiskContent string
 
 	for i := 0; i < totalDisks; i++ {
 		diskNum := i + 1
-		start := i * *chunkSize
-		end := start + *chunkSize
+		start := i * opts.ChunkSize
+		end := start + opts.ChunkSize
 		if end > encodedLen {
 			end = encodedLen
 		}
@@ -245,7 +256,7 @@ func main() {
 		manifest.DiskHashes = append(manifest.DiskHashes, chunkHash)
 
 		var formattedDisk string
-		if *v1Compat {
+		if opts.V1Compat {
 			if totalDisks == 1 {
 				formattedDisk = chunkPayload
 			} else {
@@ -254,22 +265,22 @@ func main() {
 		} else {
 			// Formato v2 autenticado: v2;[algo];[parte/total];[chunk_sha256];[root_sha256];[payload]
 			formattedDisk = fmt.Sprintf("v2;%s;[%d/%d];%s;%s;%s",
-				*algo, diskNum, totalDisks, chunkHash, rootHash, chunkPayload)
+				opts.Algo, diskNum, totalDisks, chunkHash, rootHash, chunkPayload)
 		}
 
 		if diskNum == 1 {
 			firstDiskContent = formattedDisk
 		}
 
-		diskFilename := filepath.Join(*outputDir, fmt.Sprintf("disk_%02d.txt", diskNum))
+		diskFilename := filepath.Join(opts.OutputDir, fmt.Sprintf("disk_%02d.txt", diskNum))
 		if err := os.WriteFile(diskFilename, []byte(formattedDisk), 0644); err != nil {
-			log.Fatalf("Falha ao salvar disco %d: %v\n", diskNum, err)
+			return nil, "", fmt.Errorf("falha ao salvar disco %d: %w", diskNum, err)
 		}
 		fmt.Printf("   -> Gravado: %s (%d chars | SHA256: %.12s...)\n", diskFilename, len(formattedDisk), chunkHash)
 	}
 
 	manifestJSON, _ := json.MarshalIndent(manifest, "", "  ")
-	_ = os.WriteFile(filepath.Join(*outputDir, "manifest.json"), manifestJSON, 0644)
+	_ = os.WriteFile(filepath.Join(opts.OutputDir, "manifest.json"), manifestJSON, 0644)
 	_ = os.WriteFile("base64", []byte(firstDiskContent), 0644)
 
 	// Emitir Manifesto Canonico em RuleL (padrao LIN)
@@ -290,17 +301,53 @@ func main() {
 		rulelBuf.WriteString(fmt.Sprintf("  \"%s\",\n", h))
 	}
 	rulelBuf.WriteString("]\n")
-	_ = os.WriteFile(filepath.Join(*outputDir, "manifest.rulel"), rulelBuf.Bytes(), 0644)
+	_ = os.WriteFile(filepath.Join(opts.OutputDir, "manifest.rulel"), rulelBuf.Bytes(), 0644)
 
 	fmt.Println("--------------------------------------------------")
 	fmt.Printf("CONCLUIDO COM SUCESSO!\n")
 	fmt.Printf("Raiz Criptografica SHA-256: %s\n", rootHash)
 	if totalDisks == 1 {
 		fmt.Printf("URL Direta de Boot:\nhttp://localhost:8080/#%s\n", firstDiskContent)
-		_ = os.WriteFile(filepath.Join(*outputDir, "boot_url.txt"), []byte("http://localhost:8080/#"+firstDiskContent), 0644)
+		_ = os.WriteFile(filepath.Join(opts.OutputDir, "boot_url.txt"), []byte("http://localhost:8080/#"+firstDiskContent), 0644)
 	} else {
-		fmt.Printf("Payload dividido em %d disquetes na pasta '%s/'.\n", totalDisks, *outputDir)
+		fmt.Printf("Payload dividido em %d disquetes na pasta '%s/'.\n", totalDisks, opts.OutputDir)
 		fmt.Printf("Para rodar: abra http://localhost:8080/#%s e insira os proximos discos conforme solicitado.\n", firstDiskContent)
 	}
 	fmt.Println("==================================================")
+
+	return &manifest, firstDiskContent, nil
+}
+
+func main() {
+	inputFile := flag.String("file", "", "Caminho para o arquivo HTML ou LIN de entrada")
+	algo := flag.String("algo", "deflate", "Algoritmo de compressao: deflate (instant zero-wasm default), brotli (max ratio), gzip")
+	chunkSize := flag.Int("chunk-size", 1800000, "Tamanho maximo por disquete em caracteres (default: 1800000)")
+	outputDir := flag.String("out-dir", "disks", "Diretorio para salvar os disquetes gerados")
+	v1Compat := flag.Bool("v1", false, "Emitir formato legado v1 (sem hashes de integridade)")
+	servePort := flag.String("serve", "", "Iniciar servidor web embutido (ex: -serve 8080)")
+	webDir := flag.String("web-dir", "Website", "Diretorio contendo os arquivos web estaticos")
+	flag.Parse()
+
+	if *servePort != "" {
+		if err := server.Start(*servePort, *webDir); err != nil {
+			log.Fatalf("Falha no servidor web: %v\n", err)
+		}
+		return
+	}
+
+	if *inputFile == "" {
+		log.Fatal("Uso:\n  Empacotar: go run . -file <arquivo.html|arquivo.lin> [-algo deflate|brotli]\n  Servidor:  go run . -serve 8080")
+	}
+
+	opts := PackOptions{
+		InputFile: *inputFile,
+		Algo:      *algo,
+		ChunkSize: *chunkSize,
+		OutputDir: *outputDir,
+		V1Compat:  *v1Compat,
+	}
+
+	if _, _, err := RunPack(opts); err != nil {
+		log.Fatalf("Erro durante o empacotamento: %v\n", err)
+	}
 }

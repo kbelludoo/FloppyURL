@@ -1,6 +1,4 @@
-//go:build ignore
-
-package main
+package server
 
 import (
 	"bytes"
@@ -15,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 
@@ -44,24 +43,26 @@ type SearchItem struct {
 var m *minify.M
 
 func initMinifier() {
-	m = minify.New()
-	m.AddFunc("text/html", minifyHtml.Minify)
+	if m == nil {
+		m = minify.New()
+		m.AddFunc("text/html", minifyHtml.Minify)
+	}
 }
 
-func enableCORS(w *http.ResponseWriter) {
-	(*w).Header().Set("Access-Control-Allow-Origin", "*")
-	(*w).Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-	(*w).Header().Set("Access-Control-Allow-Headers", "Content-Type")
+func EnableCORS(w http.ResponseWriter) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 }
 
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	enableCORS(&w)
+func HealthHandler(w http.ResponseWriter, r *http.Request) {
+	EnableCORS(w)
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("<h1>⚡ PocketWeb Global Search & Packager Online</h1>"))
+	w.Write([]byte("<h1>⚡ PocketWeb Global Search & Packager Online (Go Engine)</h1>"))
 }
 
-func searchHandler(w http.ResponseWriter, r *http.Request) {
-	enableCORS(&w)
+func SearchHandler(w http.ResponseWriter, r *http.Request) {
+	EnableCORS(w)
 	if r.Method == http.MethodOptions {
 		return
 	}
@@ -72,7 +73,6 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. Busca Global via Motor Web de Alta Densidade
 	endpoint := "https://www.bing.com/search?q=" + url.QueryEscape(query)
 	req, err := http.NewRequest("GET", endpoint, nil)
 	if err != nil {
@@ -100,43 +100,25 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	cleanTags := func(s string) string {
 		re := regexp.MustCompile(`<[^>]*>`)
 		s = re.ReplaceAllString(s, "")
-		s = html.UnescapeString(s)
-		s = strings.ReplaceAll(s, "&nbsp;", " ")
-		return strings.TrimSpace(s)
+		return strings.TrimSpace(html.UnescapeString(s))
 	}
 
-	decodeBingURL := func(raw string) string {
-		re := regexp.MustCompile(`(?:&amp;|&)u=a1([^&]+)`)
-		m := re.FindStringSubmatch(raw)
-		if len(m) > 1 {
-			b64 := m[1]
-			for len(b64)%4 != 0 {
-				b64 += "="
-			}
-			dec, err := base64.URLEncoding.DecodeString(b64)
-			if err == nil && len(dec) > 0 {
-				return string(dec)
-			}
-		}
-		return raw
-	}
-
-	liRegex := regexp.MustCompile(`<li class="b_algo"[^>]*>([\s\S]*?)</li>`)
-	titleRegex := regexp.MustCompile(`<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a></h2>`)
-	snippetRegex := regexp.MustCompile(`<p[^>]*>([\s\S]*?)</p>`)
-
-	items := liRegex.FindAllStringSubmatch(body, -1)
 	var results []SearchItem
+	liRegex := regexp.MustCompile(`(?s)<li class="b_algo"[^>]*>(.*?)</li>`)
+	matches := liRegex.FindAllStringSubmatch(body, -1)
 
-	for _, item := range items {
-		liHTML := item[1]
+	for _, match := range matches {
+		liHTML := match[1]
+
+		titleRegex := regexp.MustCompile(`<h2><a[^>]+href="([^"]+)"[^>]*>(.*?)</a></h2>`)
 		tMatches := titleRegex.FindStringSubmatch(liHTML)
+
 		if len(tMatches) > 2 {
-			rawURL := tMatches[1]
-			actualURL := decodeBingURL(rawURL)
+			actualURL := tMatches[1]
 			title := cleanTags(tMatches[2])
 
 			snippet := ""
+			snippetRegex := regexp.MustCompile(`(?s)<p[^>]*>(.*?)</p>`)
 			sMatches := snippetRegex.FindStringSubmatch(liHTML)
 			if len(sMatches) > 1 {
 				snippet = cleanTags(sMatches[1])
@@ -159,11 +141,13 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
-func packHandler(w http.ResponseWriter, r *http.Request) {
-	enableCORS(&w)
+func PackHandler(w http.ResponseWriter, r *http.Request) {
+	EnableCORS(w)
 	if r.Method == http.MethodOptions {
 		return
 	}
+
+	initMinifier()
 
 	targetURL := r.URL.Query().Get("url")
 	if targetURL == "" {
@@ -200,7 +184,7 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"falha ao ler HTML: %v"}`, err), http.StatusInternalServerError)
 		return
 	}
-	// Injeta base href e interceptor de navegação contínua
+
 	htmlStr := string(rawHTML)
 	injection := fmt.Sprintf(`<base href="%s"><script>document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href&&!a.href.startsWith('javascript:')&&!a.href.startsWith('#')){e.preventDefault();window.parent.postMessage({type:'POCKET_NAV',url:a.href},'*');}});</script>`, targetURL)
 
@@ -240,7 +224,7 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 
 	res := PackResponse{
 		Status:          "success",
-		Engine:          "Go 1.22+ (PocketWeb Global Engine)",
+		Engine:          "Go 1.25+ (PocketWeb Global Engine)",
 		Algorithm:       algo,
 		OriginalURL:     targetURL,
 		OriginalBytes:   origSize,
@@ -255,13 +239,30 @@ func packHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-func main() {
-	initMinifier()
-	http.HandleFunc("/health", healthHandler)
-	http.HandleFunc("/search", searchHandler)
-	http.HandleFunc("/pack", packHandler)
+// NewHandler creates an http.Handler that routes APIs and serves webDir on root.
+func NewHandler(webDir string) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", HealthHandler)
+	mux.HandleFunc("/search", SearchHandler)
+	mux.HandleFunc("/pack", PackHandler)
 
-	port := "8080"
-	fmt.Printf("🚀 PocketWeb Global Server online na porta %s...\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	if webDir != "" {
+		if _, err := os.Stat(webDir); err == nil {
+			fs := http.FileServer(http.Dir(webDir))
+			mux.Handle("/", fs)
+		}
+	}
+
+	return mux
+}
+
+// Start runs the server on given addr and serves webDir.
+func Start(addr, webDir string) error {
+	if !strings.Contains(addr, ":") {
+		addr = ":" + addr
+	}
+	initMinifier()
+	handler := NewHandler(webDir)
+	log.Printf("🚀 PocketWeb & FloppyURL Server online em http://localhost%s (pasta: %s)...\n", addr, webDir)
+	return http.ListenAndServe(addr, handler)
 }

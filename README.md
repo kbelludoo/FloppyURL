@@ -41,13 +41,19 @@ Acesse diretamente via GitHub Pages:
 
 ---
 
-## 🛠️ Ferramenta de Empacotamento em Linha de Comando (Go CLI)
+## 🛠️ Ferramenta de Linha de Comando e Servidor Unificado (100% Go)
 
-Para transformar sites inteiros ou manuais técnicos em links compactados do PocketWeb:
+Para empacotar sites, rodar testes ou subir o servidor web local com zero dependências externas (sem necessidade de Python ou Node):
 
 ```bash
-# Compilar o CLI
-go build -o floppy-pack main.go
+# Compilar o binário unificado
+go build -o floppy-pack .
+
+# Executar a suíte de testes de integridade e atestação (100% Go nativo)
+go test -v ./...
+
+# Iniciar o servidor local (PWA + API PocketWeb)
+./floppy-pack -serve 8080
 
 # Empacotar um manual ou página HTML
 ./floppy-pack -file manual_emergencia.html -algo deflate

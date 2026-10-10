@@ -9,5 +9,5 @@ require (
 
 require (
 	github.com/tdewolff/parse/v2 v2.8.13 // indirect
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.61.0 // indirect
 )

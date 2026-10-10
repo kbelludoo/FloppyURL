@@ -16,10 +16,12 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/tdewolff/minify/v2"
 	minifyHtml "github.com/tdewolff/minify/v2/html"
 )
+
 
 type PackResponse struct {
 	Status          string  `json:"status"`
@@ -239,12 +241,95 @@ func PackHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// NewHandler creates an http.Handler that routes APIs and serves webDir on root.
-func NewHandler(webDir string) http.Handler {
+// PackURL fetches, minifies and deflate-compresses the given URL, returning a PackResponse.
+// This is the same logic as PackHandler but usable without an HTTP round-trip.
+func PackURL(targetURL, _ string) (*PackResponse, error) {
+	initMinifier()
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	req, err := http.NewRequest("GET", targetURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch URL: %w", err)
+	}
+	defer resp.Body.Close()
+
+	rawHTML, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	htmlStr := string(rawHTML)
+	injection := fmt.Sprintf(`<base href="%s"><script>document.addEventListener('click',function(e){var a=e.target.closest('a');if(a&&a.href&&!a.href.startsWith('javascript:')&&!a.href.startsWith('#')){e.preventDefault();window.parent.postMessage({type:'POCKET_NAV',url:a.href},'*');}});</script>`, targetURL)
+	if strings.Contains(strings.ToLower(htmlStr), "<head>") {
+		re := regexp.MustCompile(`(?i)<head>`)
+		htmlStr = re.ReplaceAllString(htmlStr, "<head>"+injection)
+	} else {
+		htmlStr = injection + htmlStr
+	}
+	rawHTML = []byte(htmlStr)
+
+	origSize := len(rawHTML)
+	minified, err := m.Bytes("text/html", rawHTML)
+	if err != nil {
+		minified = rawHTML
+	}
+
+	var buf bytes.Buffer
+	writer, _ := flate.NewWriter(&buf, flate.BestCompression)
+	writer.Write(minified)
+	writer.Close()
+	compBytes := buf.Bytes()
+
+	compSize := len(compBytes)
+	encoded := base64.RawURLEncoding.EncodeToString(compBytes)
+
+	sum := sha256.Sum256([]byte(encoded))
+	chunkSHA := hex.EncodeToString(sum[:])
+
+	reduction := float64(origSize-compSize) / float64(origSize) * 100.0
+	if reduction < 0 {
+		reduction = 0
+	}
+
+	return &PackResponse{
+		Status:          "success",
+		Engine:          "Go (PocketWeb Global Engine)",
+		Algorithm:       "deflate",
+		OriginalURL:     targetURL,
+		OriginalBytes:   origSize,
+		CompressedBytes: compSize,
+		EncodedChars:    len(encoded),
+		ReductionPct:    reduction,
+		SHA256:          chunkSHA,
+		BootURL:         fmt.Sprintf("https://kbelludoo.github.io/FloppyURL/#v2;deflate;[1/1];%s;%s;%s", chunkSHA, chunkSHA, encoded),
+	}, nil
+}
+
+// NewHandler creates an http.Handler that routes APIs, agent, router gateway, and serves webDir on root.
+// agentH and routerH may be nil.
+func NewHandler(webDir string, agentH http.Handler, routerH http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", HealthHandler)
 	mux.HandleFunc("/search", SearchHandler)
 	mux.HandleFunc("/pack", PackHandler)
+
+	if agentH != nil {
+		mux.Handle("/agent", agentH)
+	}
+
+	if routerH != nil {
+		mux.Handle("/v1/", routerH)
+		mux.Handle("/v1/chat/completions", routerH)
+		mux.Handle("/v1/models", routerH)
+		mux.Handle("/v1/health", routerH)
+	}
 
 	if webDir != "" {
 		if _, err := os.Stat(webDir); err == nil {
@@ -256,13 +341,23 @@ func NewHandler(webDir string) http.Handler {
 	return mux
 }
 
-// Start runs the server on given addr and serves webDir.
-func Start(addr, webDir string) error {
+// Start runs the server on given addr and serves webDir. agentH and routerH may be nil.
+func Start(addr, webDir string, agentH http.Handler, routerH http.Handler) error {
 	if !strings.Contains(addr, ":") {
 		addr = ":" + addr
 	}
 	initMinifier()
-	handler := NewHandler(webDir)
-	log.Printf("🚀 PocketWeb & FloppyURL Server online em http://localhost%s (pasta: %s)...\n", addr, webDir)
+	handler := NewHandler(webDir, agentH, routerH)
+	agentStatus := "disabled"
+	if agentH != nil {
+		agentStatus = "enabled"
+	}
+	routerStatus := "disabled"
+	if routerH != nil {
+		routerStatus = "enabled (/v1)"
+	}
+	log.Printf("🚀 PocketWeb & FloppyURL Server online em http://localhost%s (pasta: %s, agent: %s, router: %s)...\n", addr, webDir, agentStatus, routerStatus)
 	return http.ListenAndServe(addr, handler)
 }
+
+

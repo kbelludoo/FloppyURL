@@ -25,7 +25,7 @@ func TestHealthEndpoint(t *testing.T) {
 }
 
 func TestStaticAndMuxHandler(t *testing.T) {
-	h := NewHandler("../../Website")
+	h := NewHandler("../../Website", nil, nil)
 	req := httptest.NewRequest("GET", "/health", nil)
 	w := httptest.NewRecorder()
 

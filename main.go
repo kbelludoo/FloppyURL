@@ -11,10 +11,13 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 
+	"github.com/Xelckis/floppyURL/pkg/agent"
+	"github.com/Xelckis/floppyURL/pkg/router"
 	"github.com/Xelckis/floppyURL/pkg/server"
 	"github.com/andybalholm/brotli"
 	"github.com/tdewolff/minify/v2"
@@ -326,14 +329,26 @@ func main() {
 	v1Compat := flag.Bool("v1", false, "Emitir formato legado v1 (sem hashes de integridade)")
 	servePort := flag.String("serve", "", "Iniciar servidor web embutido (ex: -serve 8080)")
 	webDir := flag.String("web-dir", "Website", "Diretorio contendo os arquivos web estaticos")
+	enableAgent := flag.Bool("agent", false, "Habilitar endpoint /agent (requer LLM_API_KEY no ambiente)")
+	enableRouter := flag.Bool("router", false, "Habilitar OpenAI API Gateway /v1/chat/completions com RTK e auto-fallback")
 	flag.Parse()
 
 	if *servePort != "" {
-		if err := server.Start(*servePort, *webDir); err != nil {
+		var agentH http.Handler
+		if *enableAgent {
+			agentH = agent.Handler()
+		}
+		var routerH http.Handler
+		if *enableRouter {
+			r := router.NewRouter()
+			routerH = r.Handler()
+		}
+		if err := server.Start(*servePort, *webDir, agentH, routerH); err != nil {
 			log.Fatalf("Falha no servidor web: %v\n", err)
 		}
 		return
 	}
+
 
 	if *inputFile == "" {
 		log.Fatal("Uso:\n  Empacotar: go run . -file <arquivo.html|arquivo.lin> [-algo deflate|brotli]\n  Servidor:  go run . -serve 8080")

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -53,11 +54,13 @@ type UpstreamProvider struct {
 	Model    string
 	Headers  map[string]string
 	NoRotate bool
+	LocalIP  net.IP
 }
 
 type LLMClient struct {
 	Providers  []UpstreamProvider
 	HTTPClient *http.Client
+	Daemon     *opencode.DaemonClient
 }
 
 func (c *LLMClient) SetModel(model string) {
@@ -144,6 +147,52 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 		}
 		if len(ordered) > 0 {
 			log.Printf("[llm] opencode: %d modelo(s) carregado(s) de %s", len(ordered), strings.Join(oc.ConfigFiles(), ", "))
+		}
+	}
+
+	// 0.1 OpenCode Multi-Account Slots with Dedicated IP Binding
+	if tokensEnv := os.Getenv("OPENCODE_TOKENS"); tokensEnv != "" {
+		tokens := strings.Split(tokensEnv, ",")
+		var ips []net.IP
+		if ipsEnv := os.Getenv("ROTATING_IPS"); ipsEnv != "" {
+			for _, part := range strings.Split(ipsEnv, ",") {
+				if ip := net.ParseIP(strings.TrimSpace(part)); ip != nil {
+					ips = append(ips, ip)
+				}
+			}
+		}
+
+		defaultModel := os.Getenv("OPENCODE_MODEL")
+		if defaultModel == "" {
+			defaultModel = "deepseek-v4.1-flash-free"
+		}
+
+		loadedSlots := 0
+		for i, tok := range tokens {
+			tok = strings.TrimSpace(tok)
+			if tok == "" {
+				continue
+			}
+			var boundIP net.IP
+			if len(ips) > 0 {
+				boundIP = ips[i%len(ips)]
+			}
+			provName := fmt.Sprintf("opencode-slot-%d", i+1)
+			if boundIP != nil {
+				provName = fmt.Sprintf("opencode-slot-%d-%s", i+1, boundIP.String())
+			}
+			providers = append(providers, UpstreamProvider{
+				Name:     provName,
+				BaseURL:  "https://opencode.ai/zen/v1",
+				APIKey:   tok,
+				Model:    defaultModel,
+				LocalIP:  boundIP,
+				NoRotate: true,
+			})
+			loadedSlots++
+		}
+		if loadedSlots > 0 {
+			log.Printf("[llm] opencode: %d conta(s) configurada(s) com binding de IP dedicado", loadedSlots)
 		}
 	}
 
@@ -274,10 +323,35 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 	return &LLMClient{
 		Providers:  providers,
 		HTTPClient: network.NewRotatingHTTPClient(120 * time.Second),
+		Daemon:     opencode.NewDaemonClient(),
 	}
 }
 
 func (c *LLMClient) Complete(ctx context.Context, messages []Message, tools []ToolDef) (*Message, string, error) {
+	// 0. Primary: OpenCode Local Headless Daemon (rotacionando todas as contas conectadas)
+	if c.Daemon != nil && c.Daemon.IsAvailable() {
+		var userPrompt string
+		for i := len(messages) - 1; i >= 0; i-- {
+			if messages[i].Role == "user" && strings.TrimSpace(messages[i].Content) != "" {
+				userPrompt = messages[i].Content
+				break
+			}
+		}
+		if userPrompt != "" {
+			ans, err := c.Daemon.Complete(ctx, userPrompt)
+			if err == nil && strings.TrimSpace(ans) != "" {
+				log.Printf("[llm] ✅ Resposta atendida com sucesso pelo OpenCode Headless Daemon")
+				return &Message{
+					Role:    "assistant",
+					Content: ans,
+				}, "stop", nil
+			}
+			if err != nil {
+				log.Printf("[llm-fallback] ⚠️ OpenCode daemon error: %v. Acionando cadeia de provedores upstream...", err)
+			}
+		}
+	}
+
 	if len(c.Providers) == 0 {
 		return nil, "", fmt.Errorf("nenhum provedor LLM configurado. Defina MISTRAL_API_KEY, APINEX_API_KEY, TOKENHARBOR_API_KEY, KILO_API_KEY, GROQ_API_KEY ou OPENROUTER_API_KEY")
 	}
@@ -344,7 +418,22 @@ func (c *LLMClient) completeWithProvider(ctx context.Context, prov UpstreamProvi
 	httpReq.Header.Set("X-Title", "Agent Go")
 
 	httpClient := c.HTTPClient
-	if prov.NoRotate {
+	if prov.LocalIP != nil {
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+					dialer := &net.Dialer{
+						Timeout:   15 * time.Second,
+						KeepAlive: 30 * time.Second,
+						LocalAddr: &net.TCPAddr{IP: prov.LocalIP},
+					}
+					return dialer.DialContext(ctx, network, addr)
+				},
+				DisableKeepAlives: true,
+			},
+			Timeout: 35 * time.Second,
+		}
+	} else if prov.NoRotate {
 		httpClient = &http.Client{}
 	}
 

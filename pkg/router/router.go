@@ -2,8 +2,10 @@ package router
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -53,6 +55,52 @@ func NewRouter() *Router {
 
 	// Setup primary provider chain com modelos 100% gratuitos
 	var defaultChain []Provider
+
+	// 0. OpenCode Multi-Account Slots with Dedicated IP Binding
+	if tokensEnv := os.Getenv("OPENCODE_TOKENS"); tokensEnv != "" {
+		tokens := strings.Split(tokensEnv, ",")
+		var ips []net.IP
+		if ipsEnv := os.Getenv("ROTATING_IPS"); ipsEnv != "" {
+			for _, part := range strings.Split(ipsEnv, ",") {
+				if ip := net.ParseIP(strings.TrimSpace(part)); ip != nil {
+					ips = append(ips, ip)
+				}
+			}
+		}
+
+		defaultModel := os.Getenv("OPENCODE_MODEL")
+		if defaultModel == "" {
+			defaultModel = "deepseek-v4.1-flash-free"
+		}
+
+		loadedSlots := 0
+		for i, tok := range tokens {
+			tok = strings.TrimSpace(tok)
+			if tok == "" {
+				continue
+			}
+			var boundIP net.IP
+			if len(ips) > 0 {
+				boundIP = ips[i%len(ips)]
+			}
+			provName := fmt.Sprintf("opencode-slot-%d", i+1)
+			if boundIP != nil {
+				provName = fmt.Sprintf("opencode-slot-%d-%s", i+1, boundIP.String())
+			}
+			defaultChain = append(defaultChain, Provider{
+				Name:       provName,
+				BaseURL:    "https://opencode.ai/zen/v1",
+				APIKey:     tok,
+				DefaultMod: defaultModel,
+				LocalIP:    boundIP,
+				Active:     true,
+			})
+			loadedSlots++
+		}
+		if loadedSlots > 0 {
+			log.Printf("[RouterGo] opencode: %d conta(s) configurada(s) com binding de IP dedicado no router", loadedSlots)
+		}
+	}
 
 	if apinexKey != "" {
 		defaultChain = append(defaultChain, Provider{
@@ -174,8 +222,12 @@ func NewRouter() *Router {
 	pool.RegisterRoute("claude-sonnet", defaultChain)
 	pool.RegisterRoute("claude-sonnet-5", defaultChain)
 	pool.RegisterRoute("claude-opus", defaultChain)
-	pool.RegisterRoute("claude-opus-5.5", defaultChain)
 	pool.RegisterRoute("llama", defaultChain)
+	pool.RegisterRoute("opencode", defaultChain)
+	pool.RegisterRoute("opencode/deepseek-v4.1-flash-free", defaultChain)
+	pool.RegisterRoute("deepseek-v4.1-flash-free", defaultChain)
+	pool.RegisterRoute("kimi-k3-free", defaultChain)
+	pool.RegisterRoute("minimax-m2.5-free", defaultChain)
 
 	// Direct bridge to the models configured in the local opencode install.
 	// Uses the same config/auth as the opencode CLI, but without running it.

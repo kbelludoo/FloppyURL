@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenCode Headless AI Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu
+ExecStart=/home/ubuntu/.opencode/bin/opencode serve --port 4096 --cors *
+Restart=always
+RestartSec=3
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/ubuntu/.opencode/bin
+Environment=HOME=/home/ubuntu
+Environment=OPENCODE_SERVER_PASSWORD=opencode_agent_secret_2026
+
+[Install]
+WantedBy=multi-user.target

@@ -22,6 +22,7 @@ type Provider struct {
 	APIKey     string
 	DefaultMod string
 	Active     bool
+	LocalIP    net.IP
 	// Circuit breaker metrics
 	failCount  int64
 	lastFailed time.Time
@@ -150,9 +151,24 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 		httpReq.Header.Set("Authorization", "Bearer "+prov.APIKey)
 		httpReq.Header.Set("User-Agent", "RouterGo/1.0 (FloppyURL-Omni)")
 
-		// Automatic IP Egress rotation: Alternate between SP1 (direct) and SP2 (tunnel)
+		// Automatic IP Egress rotation: Bind to dedicated LocalIP if set, else alternate SP1/SP2
 		clientToUse := p.client
-		if p.sp2Client != nil && atomic.AddUint64(&p.rrCounter, 1)%2 == 1 {
+		if prov.LocalIP != nil {
+			clientToUse = &http.Client{
+				Transport: &http.Transport{
+					DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+						dialer := &net.Dialer{
+							Timeout:   15 * time.Second,
+							KeepAlive: 30 * time.Second,
+							LocalAddr: &net.TCPAddr{IP: prov.LocalIP},
+						}
+						return dialer.DialContext(ctx, network, addr)
+					},
+					DisableKeepAlives: true,
+				},
+				Timeout: 30 * time.Second,
+			}
+		} else if p.sp2Client != nil && atomic.AddUint64(&p.rrCounter, 1)%2 == 1 {
 			clientToUse = p.sp2Client
 		}
 

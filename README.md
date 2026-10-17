@@ -1,77 +1,100 @@
-# PocketWeb / FloppyURL Engine - Web Resiliente para Áreas Remotas e Baixa Conectividade
+# Agente IA em Go (Ultra-Leve & Autônomo)
 
-**PocketWeb** é uma plataforma web ultra-leve (Progressive Web App) e um motor de empacotamento desenhado para áreas remotas, comunidades rurais, expedições, zonas de desastre e conexões via satélite ou 2G/3G.
-
-Permite transportar e acessar páginas web completas, guias de sobrevivência, notícias e manuais técnicos contidos diretamente no fragmento de URL (`#`), com descompressão nativa instantânea de **0 bytes adicionais** e armazenamento permanente no aparelho (IndexedDB) para uso **100% offline**.
+Agente autônomo e servidor Web desenvolvido em Go, com consumo mínimo de memória (~1.5 MB de RAM) e integração com IA via **NVIDIA NIM** (Kimi-k3 / Llama-3.3 / Nemotron).
 
 ---
 
-## 🎯 Por que o PocketWeb foi criado?
+## 🚀 Como Iniciar
 
-Em regiões remotas (embarcações, florestas, áreas de mineração, missões humanitárias e zonas com internet via satélite limitada), a conexão é intermitente, cara ou inexistente. 
+### No Windows:
+Basta dar duplo clique em:
+```cmd
+start.bat
+```
+Ou via terminal:
+```cmd
+agent-go.exe -serve 8888 -web-dir Website -agent -router
+```
 
-- **Páginas normais da Web** pesam entre 3 MB e 15 MB e quebram assim que o sinal oscila.
-- **O PocketWeb** reduz páginas para meros 5 KB a 50 KB usando algoritmos DEFLATE de alta densidade e minificação AST.
-- **Resiliência Total:** Uma vez aberta, a página é salva na memória local do celular ou computador, garantindo que o usuário **nunca mais perca o acesso**, mesmo em modo avião ou sem sinal de operadora.
-
----
-
-## ✨ Recursos Principais
-
-- ⚡ **Zero-Byte Runtime (Sem WASM Pesado):** Descompressão realizada pela API nativa `DecompressionStream('deflate-raw')` presente diretamente nos motores C++ do Chrome, Safari, Firefox e Edge. Nenhum binário externo precisa ser baixado.
-- 📶 **Offline-First com PWA:** Equipado com Service Worker e Web App Manifest. Pode ser instalado na tela inicial do celular como um aplicativo independente.
-- 💾 **Biblioteca de Bolso Offline (IndexedDB):** Salve artigos, boletins meteorológicos e manuais com 1 clique para leitura permanente sem internet.
-- 🌓 **Modos Solar & Noturno OLED:** Interface de alto contraste para visibilidade sob sol forte em campo e modo noturno com fundo preto puro para economizar bateria em smartphones.
-- 📦 **Compactador Integrado no Aparelho:** Crie documentos compactados diretamente no navegador, sem precisar de servidor.
-- 📲 **Compartilhamento P2P sem Dados:** Transmita páginas compactadas de um aparelho para outro via Nearby Share, Bluetooth ou QR Code sem gastar 1 byte de plano de dados.
-- 🔒 **Integridade Criptográfica (NIST FIPS 180-4 SHA-256):** Verificação via `crypto.subtle` garantindo que o documento não foi corrompido durante a transmissão.
-
----
-
-## 🚀 Como Usar
-
-### 1. Acesso Online / Demonstração
-Acesse diretamente via GitHub Pages:
-**[https://kbelludoo.github.io/FloppyURL/](https://kbelludoo.github.io/FloppyURL/)**
-
-### 2. Uso Offline
-1. Abra o link uma vez com qualquer conexão (mesmo 2G fraca).
-2. O Service Worker armazenará o aplicativo localmente.
-3. Agora você pode abrir e descompactar links mesmo em **modo avião** ou no meio da mata.
-
----
-
-## 🛠️ Ferramenta de Linha de Comando e Servidor Unificado (100% Go)
-
-Para empacotar sites, rodar testes ou subir o servidor web local com zero dependências externas (sem necessidade de Python ou Node):
-
+### No Linux (VPS):
 ```bash
-# Compilar o binário unificado
-go build -o floppy-pack .
-
-# Executar a suíte de testes de integridade e atestação (100% Go nativo)
-go test -v ./...
-
-# Iniciar o servidor local (PWA + API PocketWeb)
-./floppy-pack -serve 8080
-
-# Empacotar um manual ou página HTML
-./floppy-pack -file manual_emergencia.html -algo deflate
+./agent-go-linux -serve 8888 -web-dir Website -agent -router
 ```
-
-O comando emitirá o link direto no formato:
-`https://kbelludoo.github.io/FloppyURL/#v2;deflate;[1/1];<sha256>;<sha256>;<payload>`
 
 ---
 
-## 📜 Especificação do Formato de Transporte (v2)
+## 📡 Endpoints Disponíveis
 
-```text
-#v2;<algoritmo>;[<parte_atual>/<total_partes>];<sha256_bloco>;<sha256_raiz>;<payload_base64url>
+- **Interface Web:** `http://localhost:8888`
+- **Agente IA (POST):** `http://localhost:8888/agent`
+  - Payload JSON: `{"message": "sua mensagem ou prompt"}`
+  - Resposta JSON: `{"response": "resposta gerada pela IA", "history": [...]}`
+- **Router OpenAI-Compatible:** `http://localhost:8888/v1/chat/completions`
+
+---
+
+## 🛠️ Ferramentas Nativas do Agente (Tools)
+
+O agente possui capacidade autônoma de executar ações no sistema quando solicitado:
+- `browser_navigate`: Navega em URLs e extrai conteúdo limpo.
+- `bash_exec`: Executa comandos de terminal.
+- `read_file` & `write_file`: Lê e cria arquivos no disco.
+- `system_status`: Retorna uso de CPU, RAM e disco do servidor.
+
+---
+
+## ⚙️ Configuração (.env)
+
+As chaves e modelos de IA ficam configurados no arquivo `.env`:
+- `LLM_BASE_URL`: `https://integrate.api.nvidia.com/v1`
+- `LLM_API_KEY`: Chave da NVIDIA NIM
+- `LLM_MODEL`: `moonshotai/kimi-k3` (ou `meta/llama-3.3-70b-instruct`)
+
+---
+
+## 🆓 DeepSeek Web grátis (sem API key)
+
+Portado da Cassandra (Python) para Go: o agente conversa com o **chat.deepseek.com**
+usando a sessão do seu navegador, sem chave de API. Inclui o solver de
+Proof-of-Work (DeepSeekHashV1) rodando o WASM oficial via `wazero` (Go puro).
+
+### 1. Abra o Chrome com debug remoto e faça login
+
+```powershell
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" `
+  --remote-debugging-port=9222 `
+  --user-data-dir="$env:LOCALAPPDATA\deepseek-chrome" `
+  --no-first-run "https://chat.deepseek.com/"
 ```
 
-- `v2`: Versão do protocolo de dados.
-- `<algoritmo>`: `deflate` (nativa de 0-bytes) ou `gzip`.
-- `[i/N]`: Índice e total de volumes (para documentos particionados se exceder o limite de URL).
-- `<sha256_bloco>`: Hash SHA-256 do bloco Base64 para verificação de integridade antes da descompressão.
-- `<payload_base64url>`: Dados comprimidos em Base64 URL-safe (sem padding `=`).
+### 2. Capture a sessão
+
+```cmd
+agent-go.exe -deepseek-login
+```
+
+A sessão é salva em `session/session.json` (reaproveitada por 24h).
+
+### 3. Use
+
+```cmd
+REM Chat no terminal (grátis, sem API key)
+agent-go.exe -deepseek-chat
+
+REM Ou via API OpenAI-compatible no router
+agent-go.exe -serve 8888 -router
+```
+
+No `/v1/chat/completions`, use os modelos `deepseek-web`, `deepseek-web-thinking`,
+`deepseek-web-expert` ou `deepseek-web-expert-thinking`.
+
+### Variáveis de ambiente
+
+- `DEEPSEEK_CDP_URL`: endpoint CDP do Chrome (padrão `http://127.0.0.1:9222`)
+- `DEEPSEEK_SESSION_FILE`: caminho do `session.json`
+- `DEEPSEEK_MIN_REQUEST_INTERVAL`: intervalo mínimo entre requests (padrão `3.0`s)
+
+O cliente falha de forma segura: respeita o intervalo mínimo, não repete após
+401/403/429 e abre um disjuntor (circuit breaker) em sinais de CAPTCHA/WAF.
+Nunca resolve CAPTCHA automaticamente.
+

@@ -19,38 +19,66 @@ type Router struct {
 func NewRouter() *Router {
 	pool := NewPool()
 
-	// 1. Primary NVIDIA NIM config
-	nvKey := os.Getenv("LLM_API_KEY")
-	if nvKey == "" {
-		nvKey = os.Getenv("NVIDIA_API_KEY")
-	}
-	nvBase := os.Getenv("LLM_BASE_URL")
-	if nvBase == "" {
-		nvBase = "https://integrate.api.nvidia.com/v1"
-	}
+	// 1. Apinex Gateway (Modelos 100% Free: Gemini 3.8 Flash, DeepSeek v4.1, GPT-6 Luna)
+	apinexKey := os.Getenv("APINEX_API_KEY")
+	apinexBase := "https://api.apinex.bond/v1"
 
-	// 2. Kilo Gateway (390+ models, including 16 free models)
+	// 2. TokenHarbor Gateway (Modelos 100% Free: DeepSeek v4.1 Flash Free, DeepSeek v4 Flash Free)
+	thKey := os.Getenv("TOKENHARBOR_API_KEY")
+	thBase := "https://tokenharbor.ai/v1"
+
+	// 3. Kilo Gateway (kilo-auto/free)
 	kiloKey := os.Getenv("KILO_API_KEY")
 	kiloBase := "https://api.kilo.ai/api/gateway"
 
-
-	// 3. Groq Fallback (optional)
+	// 4. Groq Fallback (tier gratuito)
 	groqKey := os.Getenv("GROQ_API_KEY")
 	groqBase := "https://api.groq.com/openai/v1"
 
-	// 4. OpenRouter Fallback (optional)
+	// 5. OpenRouter Fallback (modelos gratuitos)
 	orKey := os.Getenv("OPENROUTER_API_KEY")
 	orBase := "https://openrouter.ai/api/v1"
 
-	// Setup primary provider chain
+	// Setup primary provider chain com modelos 100% gratuitos
 	var defaultChain []Provider
 
-	if nvKey != "" {
+	if apinexKey != "" {
 		defaultChain = append(defaultChain, Provider{
-			Name:       "nvidia-kimi-k3",
-			BaseURL:    nvBase,
-			APIKey:     nvKey,
-			DefaultMod: "moonshotai/kimi-k3",
+			Name:       "apinex-gemini-free",
+			BaseURL:    apinexBase,
+			APIKey:     apinexKey,
+			DefaultMod: "free/gemini-3.8-flash",
+			Active:     true,
+		})
+		defaultChain = append(defaultChain, Provider{
+			Name:       "apinex-deepseek-free",
+			BaseURL:    apinexBase,
+			APIKey:     apinexKey,
+			DefaultMod: "free/deepseek-v4.1-flash",
+			Active:     true,
+		})
+		defaultChain = append(defaultChain, Provider{
+			Name:       "apinex-luna-free",
+			BaseURL:    apinexBase,
+			APIKey:     apinexKey,
+			DefaultMod: "free/gpt-6-luna",
+			Active:     true,
+		})
+	}
+
+	if thKey != "" {
+		defaultChain = append(defaultChain, Provider{
+			Name:       "tokenharbor-deepseek-free",
+			BaseURL:    thBase,
+			APIKey:     thKey,
+			DefaultMod: "deepseek-v4.1-flash:free",
+			Active:     true,
+		})
+		defaultChain = append(defaultChain, Provider{
+			Name:       "tokenharbor-v4-free",
+			BaseURL:    thBase,
+			APIKey:     thKey,
+			DefaultMod: "deepseek-v4-flash:free",
 			Active:     true,
 		})
 	}
@@ -80,20 +108,26 @@ func NewRouter() *Router {
 			Name:       "openrouter-fallback",
 			BaseURL:    orBase,
 			APIKey:     orKey,
-			DefaultMod: "meta-llama/llama-3.3-70b-instruct",
+			DefaultMod: "meta-llama/llama-3.3-70b-instruct:free",
 			Active:     true,
 		})
 	}
 
 	pool.RegisterRoute("default", defaultChain)
-	pool.RegisterRoute("moonshotai/kimi-k3", defaultChain)
-	pool.RegisterRoute("kimi", defaultChain)
+	pool.RegisterRoute("gemini", defaultChain)
+	pool.RegisterRoute("gemini-flash", defaultChain)
+	pool.RegisterRoute("free/gemini-3.8-flash", defaultChain)
+	pool.RegisterRoute("deepseek", defaultChain)
+	pool.RegisterRoute("deepseek-flash", defaultChain)
+	pool.RegisterRoute("deepseek-v4.1-flash:free", defaultChain)
+	pool.RegisterRoute("free/deepseek-v4.1-flash", defaultChain)
+	pool.RegisterRoute("deepseek-v4-flash:free", defaultChain)
+	pool.RegisterRoute("luna", defaultChain)
+	pool.RegisterRoute("gpt-6-luna", defaultChain)
+	pool.RegisterRoute("free/gpt-6-luna", defaultChain)
 	pool.RegisterRoute("kilo", defaultChain)
 	pool.RegisterRoute("kilo-auto/free", defaultChain)
-	pool.RegisterRoute("stepfun/step-5-preview-free", defaultChain)
-	pool.RegisterRoute("nemotron", defaultChain)
-	pool.RegisterRoute("deepseek", defaultChain)
-
+	pool.RegisterRoute("llama", defaultChain)
 
 	return &Router{pool: pool}
 }
@@ -126,12 +160,20 @@ func (rt *Router) handleModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	models := []ModelItem{
+		{ID: "codecraft/claude-fable-5", Object: "model", Created: time.Now().Unix(), OwnedBy: "codecraft"},
+		{ID: "codecraft/claude-fable-5.1", Object: "model", Created: time.Now().Unix(), OwnedBy: "codecraft"},
+		{ID: "codecraft/kimi-k3", Object: "model", Created: time.Now().Unix(), OwnedBy: "codecraft"},
+		{ID: "claude-fable-5", Object: "model", Created: time.Now().Unix(), OwnedBy: "codecraft"},
+		{ID: "kimi-k3", Object: "model", Created: time.Now().Unix(), OwnedBy: "codecraft"},
 		{ID: "moonshotai/kimi-k3", Object: "model", Created: time.Now().Unix(), OwnedBy: "nvidia-nim"},
 		{ID: "meta/llama-3.3-70b-instruct", Object: "model", Created: time.Now().Unix(), OwnedBy: "nvidia-nim"},
 		{ID: "meta/llama-3.1-8b-instruct", Object: "model", Created: time.Now().Unix(), OwnedBy: "nvidia-nim"},
 		{ID: "nvidia/llama-3.1-nemotron-70b-instruct", Object: "model", Created: time.Now().Unix(), OwnedBy: "nvidia-nim"},
 		{ID: "arena/battle", Object: "model", Created: time.Now().Unix(), OwnedBy: "arena.ai"},
 		{ID: "arena/auto", Object: "model", Created: time.Now().Unix(), OwnedBy: "arena.ai"},
+		{ID: "deepseek-web", Object: "model", Created: time.Now().Unix(), OwnedBy: "deepseek-web"},
+		{ID: "deepseek-web-thinking", Object: "model", Created: time.Now().Unix(), OwnedBy: "deepseek-web"},
+		{ID: "deepseek-web-expert", Object: "model", Created: time.Now().Unix(), OwnedBy: "deepseek-web"},
 		{ID: "default", Object: "model", Created: time.Now().Unix(), OwnedBy: "routergo"},
 	}
 
@@ -213,8 +255,24 @@ func (rt *Router) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		log.Printf("[RouterGo RTK] Saved %d bytes (%.1f%% token reduction)", origSize-optSize, float64(origSize-optSize)/float64(origSize)*100.0)
 	}
 
-	// 2. If model is an OpenCode native model (e.g. mimo, opencode/mimo-v2.6-flash-free), route via OpenCodeBridge!
-	if strings.HasPrefix(requestedModel, "opencode/") || strings.Contains(requestedModel, "mimo") {
+	// 2. Free DeepSeek Web backend (no API key, uses the captured browser
+	// session). Intercept before the pool dispatch.
+	if isDeepSeekWebModel(requestedModel) {
+		var msgs []map[string]interface{}
+		if rawMsgs, ok := reqMap["messages"].([]interface{}); ok {
+			for _, m := range rawMsgs {
+				if mMap, ok := m.(map[string]interface{}); ok {
+					msgs = append(msgs, mMap)
+				}
+			}
+		}
+		rt.handleDeepSeekWeb(w, r, requestedModel, msgs, isStream)
+		return
+	}
+
+	// 3. If model is an OpenCode native model (e.g. mimo, opencode/mimo-v2.6-flash-free,
+	// codecraft/claude-fable-5), route via OpenCodeBridge with fallback to pool!
+	if strings.HasPrefix(requestedModel, "opencode/") || strings.HasPrefix(requestedModel, "codecraft/") || strings.Contains(requestedModel, "mimo") || strings.Contains(requestedModel, "fable") {
 		var msgs []map[string]interface{}
 		if rawMsgs, ok := reqMap["messages"].([]interface{}); ok {
 			for _, m := range rawMsgs {
@@ -243,7 +301,7 @@ func (rt *Router) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		log.Printf("[RouterGo] OpenCodeBridge fallback to pool: %v", err)
 	}
 
-	// 3. Dispatch through pool with automatic multi-tier fallback
+	// 4. Dispatch through pool with automatic multi-tier fallback
 	resp, providerUsed, err := rt.pool.ForwardWithFallback(r.Context(), requestedModel, reqMap, isStream)
 
 	if err != nil {

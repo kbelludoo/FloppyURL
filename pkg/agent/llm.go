@@ -64,60 +64,69 @@ func (c *LLMClient) SetModel(model string) {
 func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 	var providers []UpstreamProvider
 
-	// 1. Provedor Primário (NVIDIA NIM ou o configurado em LLM_BASE_URL)
-	pKey := apiKey
-	if pKey == "" {
-		pKey = os.Getenv("LLM_API_KEY")
-	}
-	pBase := baseURL
-	if pBase == "" {
-		pBase = os.Getenv("LLM_BASE_URL")
-	}
-	if pBase == "" {
-		pBase = "https://integrate.api.nvidia.com/v1"
-	}
-	pModel := model
-	if pModel == "" {
-		pModel = os.Getenv("LLM_MODEL")
-	}
-	if pModel == "" {
-		pModel = "openai/gpt-oss-20b"
-	}
-
-	if pKey != "" {
+	// 1. Apinex Gateway (Modelos 100% Free: Gemini 3.8 Flash, DeepSeek v4.1 Flash, GPT-6 Luna)
+	if apinexKey := os.Getenv("APINEX_API_KEY"); apinexKey != "" {
+		primaryModel := os.Getenv("APINEX_MODEL")
+		if primaryModel == "" {
+			primaryModel = "free/gemini-3.8-flash"
+		}
 		providers = append(providers, UpstreamProvider{
-			Name:    "nvidia-primary",
-			BaseURL: pBase,
-			APIKey:  pKey,
-			Model:   pModel,
+			Name:    "apinex-primary",
+			BaseURL: "https://api.apinex.bond/v1",
+			APIKey:  apinexKey,
+			Model:   primaryModel,
 		})
-
-		// Backup automático na própria NVIDIA com outro modelo de ponta
-		if strings.Contains(pBase, "nvidia.com") {
+		if primaryModel != "free/deepseek-v4.1-flash" {
 			providers = append(providers, UpstreamProvider{
-				Name:    "nvidia-backup (step-5)",
-				BaseURL: pBase,
-				APIKey:  pKey,
-				Model:   "stepfun-ai/step-5-preview",
+				Name:    "apinex-deepseek-free",
+				BaseURL: "https://api.apinex.bond/v1",
+				APIKey:  apinexKey,
+				Model:   "free/deepseek-v4.1-flash",
+			})
+		}
+		if primaryModel != "free/gpt-6-luna" {
+			providers = append(providers, UpstreamProvider{
+				Name:    "apinex-luna-free",
+				BaseURL: "https://api.apinex.bond/v1",
+				APIKey:  apinexKey,
+				Model:   "free/gpt-6-luna",
 			})
 		}
 	}
 
-	// 2. Apinex Gateway (Gemini 3.8 Flash, DeepSeek v4.1, GPT-6 Luna)
-	if apinexKey := os.Getenv("APINEX_API_KEY"); apinexKey != "" {
-		apinexModel := os.Getenv("APINEX_MODEL")
-		if apinexModel == "" {
-			apinexModel = "free/gemini-3.8-flash"
+	// 2. TokenHarbor Gateway (Modelos 100% Free: DeepSeek v4.1 Flash Free, DeepSeek v4 Flash Free)
+	if thKey := os.Getenv("TOKENHARBOR_API_KEY"); thKey != "" {
+		thModel := os.Getenv("TOKENHARBOR_MODEL")
+		if thModel == "" {
+			thModel = "deepseek-v4.1-flash:free"
 		}
 		providers = append(providers, UpstreamProvider{
-			Name:    "apinex-gateway",
-			BaseURL: "https://api.apinex.bond/v1",
-			APIKey:  apinexKey,
-			Model:   apinexModel,
+			Name:    "tokenharbor-primary",
+			BaseURL: "https://tokenharbor.ai/v1",
+			APIKey:  thKey,
+			Model:   thModel,
+		})
+		if thModel != "deepseek-v4-flash:free" {
+			providers = append(providers, UpstreamProvider{
+				Name:    "tokenharbor-v4-free",
+				BaseURL: "https://tokenharbor.ai/v1",
+				APIKey:  thKey,
+				Model:   "deepseek-v4-flash:free",
+			})
+		}
+	}
+
+	// 3. Fallback Kilo Gateway (Modelo 100% Free: kilo-auto/free)
+	if kiloKey := os.Getenv("KILO_API_KEY"); kiloKey != "" {
+		providers = append(providers, UpstreamProvider{
+			Name:    "kilo-gateway-free",
+			BaseURL: "https://api.kilo.ai/api/gateway",
+			APIKey:  kiloKey,
+			Model:   "kilo-auto/free",
 		})
 	}
 
-	// 3. Fallback Groq (Llama-3.3 ultra-rápido, tier gratuito)
+	// 4. Fallback Groq (Llama-3.3 ultra-rápido, tier gratuito)
 	if groqKey := os.Getenv("GROQ_API_KEY"); groqKey != "" {
 		providers = append(providers, UpstreamProvider{
 			Name:    "groq-fast",
@@ -127,7 +136,7 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 		})
 	}
 
-	// 3. Fallback OpenRouter (Modelos gratuitos da comunidade)
+	// 5. Fallback OpenRouter (Modelos gratuitos da comunidade)
 	if orKey := os.Getenv("OPENROUTER_API_KEY"); orKey != "" {
 		providers = append(providers, UpstreamProvider{
 			Name:    "openrouter-free",
@@ -137,14 +146,18 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 		})
 	}
 
-	// 4. Fallback Kilo Gateway (Modelos gratuitos da Kilo)
-	if kiloKey := os.Getenv("KILO_API_KEY"); kiloKey != "" {
-		providers = append(providers, UpstreamProvider{
-			Name:    "kilo-gateway-free",
-			BaseURL: "https://api.kilo.ai/api/gateway",
-			APIKey:  kiloKey,
-			Model:   "kilo-auto/free",
-		})
+	// 6. Provedor customizado explícito (se informado e não for NVIDIA NIM expirado)
+	if apiKey != "" && !strings.Contains(baseURL, "integrate.api.nvidia.com") {
+		providers = append([]UpstreamProvider{{
+			Name:    "custom-override",
+			BaseURL: baseURL,
+			APIKey:  apiKey,
+			Model:   model,
+		}}, providers...)
+	}
+
+	if model != "" && len(providers) > 0 {
+		providers[0].Model = model
 	}
 
 	return &LLMClient{
@@ -157,7 +170,7 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 
 func (c *LLMClient) Complete(ctx context.Context, messages []Message, tools []ToolDef) (*Message, string, error) {
 	if len(c.Providers) == 0 {
-		return nil, "", fmt.Errorf("nenhum provedor LLM configurado. Defina LLM_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY ou KILO_API_KEY")
+		return nil, "", fmt.Errorf("nenhum provedor LLM configurado. Defina APINEX_API_KEY, TOKENHARBOR_API_KEY, KILO_API_KEY, GROQ_API_KEY ou OPENROUTER_API_KEY")
 	}
 
 	var lastErr error
@@ -165,7 +178,7 @@ func (c *LLMClient) Complete(ctx context.Context, messages []Message, tools []To
 		msg, finishReason, err := c.completeWithProvider(ctx, prov, messages, tools)
 		if err == nil {
 			if i > 0 {
-				log.Printf("[llm-fallback] ✅ Resposta atendida com sucesso pelo fallback: %s (%s)", prov.Name, prov.Model)
+				log.Printf("[llm-fallback] ✅ Resposta atendida com sucesso pelo fallback gratuito: %s (%s)", prov.Name, prov.Model)
 			}
 			return msg, finishReason, nil
 		}
@@ -174,14 +187,20 @@ func (c *LLMClient) Complete(ctx context.Context, messages []Message, tools []To
 		lastErr = err
 	}
 
-	return nil, "", fmt.Errorf("todos os %d provedores falharam. Ultimo erro: %w", len(c.Providers), lastErr)
+	return nil, "", fmt.Errorf("todos os %d provedores gratuitos falharam. Ultimo erro: %w", len(c.Providers), lastErr)
 }
 
 func (c *LLMClient) completeWithProvider(ctx context.Context, prov UpstreamProvider, messages []Message, tools []ToolDef) (*Message, string, error) {
+	// Provedores que não suportam tools (como Kilo gateway) recebem tools=nil
+	activeTools := tools
+	if prov.Model == "kilo-auto/free" || strings.HasPrefix(prov.Model, "kilo-") {
+		activeTools = nil
+	}
+
 	reqBody := ChatRequest{
 		Model:       prov.Model,
 		Messages:    messages,
-		Tools:       tools,
+		Tools:       activeTools,
 		Temperature: 0.2,
 	}
 
@@ -196,7 +215,11 @@ func (c *LLMClient) completeWithProvider(ctx context.Context, prov UpstreamProvi
 	}
 	url += "chat/completions"
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonBytes))
+	// Timeout de até 35s por provedor individual para chavear rápido no fallback
+	provCtx, provCancel := context.WithTimeout(ctx, 35*time.Second)
+	defer provCancel()
+
+	httpReq, err := http.NewRequestWithContext(provCtx, "POST", url, bytes.NewReader(jsonBytes))
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create http request: %w", err)
 	}
@@ -218,6 +241,30 @@ func (c *LLMClient) completeWithProvider(ctx context.Context, prov UpstreamProvi
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Se falhou com 400 e tinha tools ativas, tenta uma vez sem tools antes de descartar
+		if resp.StatusCode == 400 && len(activeTools) > 0 {
+			reqBodyNoTools := reqBody
+			reqBodyNoTools.Tools = nil
+			if retryBytes, err := json.Marshal(reqBodyNoTools); err == nil {
+				retryReq, err := http.NewRequestWithContext(provCtx, "POST", url, bytes.NewReader(retryBytes))
+				if err == nil {
+					retryReq.Header.Set("Content-Type", "application/json")
+					retryReq.Header.Set("Authorization", "Bearer "+prov.APIKey)
+					if retryResp, err := c.HTTPClient.Do(retryReq); err == nil {
+						defer retryResp.Body.Close()
+						if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
+							if rBody, err := io.ReadAll(retryResp.Body); err == nil {
+								var chatResp ChatResponse
+								if err := json.Unmarshal(rBody, &chatResp); err == nil && len(chatResp.Choices) > 0 {
+									choice := chatResp.Choices[0]
+									return &choice.Message, choice.FinishReason, nil
+								}
+							}
+						}
+					}
+				}
+			}
+		}
 		return nil, "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 

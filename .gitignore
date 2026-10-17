@@ -9,3 +9,15 @@ floppy-pack
 *.exe
 __pycache__/
 *.pyc
+
+# Sessao DeepSeek Web (contem token + cookies)
+session/
+
+# Secrets & Environment variables
+.env
+.secrets.json
+
+# Binários compilados
+agent-go-linux
+floppy-server
+*.lnk

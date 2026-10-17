@@ -66,12 +66,22 @@ func (b *OpenCodeBridge) Complete(ctx context.Context, modelID string, messages 
 		userPrompt = "Olá"
 	}
 
-	// Clean model ID: e.g. "opencode/mimo-v2.6-flash-free" -> "mimo-v2.6-flash-free"
-	cleanModel := strings.TrimPrefix(modelID, "opencode/")
+	// Clean model ID: e.g. "opencode/mimo-v2.6-flash-free" -> providerID=opencode, modelID=mimo-v2.6-flash-free
+	// "codecraft/claude-fable-5" -> providerID=codecraft, modelID=claude-fable-5
+	providerID := "opencode"
+	cleanModel := modelID
+	if parts := strings.SplitN(modelID, "/", 2); len(parts) == 2 {
+		providerID = parts[0]
+		cleanModel = parts[1]
+	} else if strings.Contains(modelID, "fable") || strings.Contains(modelID, "kimi-k3") {
+		// Modelo bare sem prefixo: assume CodeCraft (ex: "claude-fable-5")
+		providerID = "codecraft"
+		cleanModel = modelID
+	}
 
 	msgPayload := map[string]interface{}{
 		"model": map[string]string{
-			"providerID": "opencode",
+			"providerID": providerID,
 			"modelID":    cleanModel,
 		},
 		"parts": []map[string]string{

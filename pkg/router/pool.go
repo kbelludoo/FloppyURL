@@ -14,8 +14,6 @@ import (
 	"golang.org/x/net/proxy"
 )
 
-
-
 // Provider represents a single LLM upstream backend (e.g., NVIDIA NIM, Groq, OpenRouter).
 type Provider struct {
 	Name       string
@@ -69,7 +67,6 @@ func NewPool() *Pool {
 	}
 }
 
-
 // RegisterRoute adds or updates a route with fallbacks.
 func (p *Pool) RegisterRoute(alias string, providers []Provider) {
 	p.mu.Lock()
@@ -98,27 +95,21 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 		// Map model alias to upstream provider model ID
 		targetModel := modelAlias
 		switch modelAlias {
-		case "default", "kimi", "":
-			targetModel = "moonshotai/kimi-k3"
+		case "default", "":
+			targetModel = "free/gemini-3.8-flash"
+		case "gemini", "gemini-flash", "gemini-3.8-flash":
+			targetModel = "free/gemini-3.8-flash"
+		case "deepseek", "deepseek-flash", "deepseek-v4.1":
+			targetModel = "deepseek-v4.1-flash:free"
+		case "deepseek-v4":
+			targetModel = "deepseek-v4-flash:free"
+		case "luna", "gpt-6-luna":
+			targetModel = "free/gpt-6-luna"
 		case "kilo", "kilo-free", "kilo-auto/free":
 			targetModel = "kilo-auto/free"
-		case "stepfun", "step":
-			targetModel = "stepfun/step-5-preview-free"
-		case "nemotron-ultra", "nemotron-550b":
-			targetModel = "nvidia/nemotron-3-ultra-550b-a55b:free"
-		case "nemotron-lightning":
-			targetModel = "nvidia/nemotron-3.5-lightning:free"
-		case "dots":
-			targetModel = "dots-studio/dots-3-note-preview:free"
-		case "nemotron":
-			targetModel = "nvidia/llama-3.1-nemotron-70b-instruct"
-		case "deepseek":
-			targetModel = "deepseek-ai/deepseek-v4.1-flash"
-		case "llama":
-			targetModel = "meta/llama-3.1-8b-instruct"
+		case "llama", "llama-3.3":
+			targetModel = "llama-3.3-70b-versatile"
 		}
-
-
 
 		// If this is a fallback provider (i > 0) and the primary model failed, use provider's DefaultMod
 		if i > 0 && prov.DefaultMod != "" {
@@ -168,7 +159,6 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 			continue
 		}
 
-
 		// Check for error status codes (4xx client error / expired model, 5xx server error, 429 rate limit) -> Trigger Fallback!
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			atomic.AddInt64(&prov.failCount, 1)
@@ -179,7 +169,6 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 			continue
 		}
 
-
 		// Success! Note: provCancel is not called here so the response body can be streamed
 		_ = provCancel
 		return resp, prov, nil
@@ -187,7 +176,6 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 
 	return nil, nil, fmt.Errorf("all providers failed in fallback chain. Last error: %w", lastErr)
 }
-
 
 func bytesNewReader(b []byte) io.Reader {
 	return &byteReader{b: b, i: 0}

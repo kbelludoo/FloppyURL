@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -17,6 +18,7 @@ import (
 	"regexp"
 
 	"github.com/Xelckis/floppyURL/pkg/agent"
+	"github.com/Xelckis/floppyURL/pkg/deepseek"
 	"github.com/Xelckis/floppyURL/pkg/router"
 	"github.com/Xelckis/floppyURL/pkg/server"
 	"github.com/andybalholm/brotli"
@@ -112,7 +114,6 @@ func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
-
 
 type PackOptions struct {
 	InputFile string
@@ -331,7 +332,41 @@ func main() {
 	webDir := flag.String("web-dir", "Website", "Diretorio contendo os arquivos web estaticos")
 	enableAgent := flag.Bool("agent", false, "Habilitar endpoint /agent (requer LLM_API_KEY no ambiente)")
 	enableRouter := flag.Bool("router", false, "Habilitar OpenAI API Gateway /v1/chat/completions com RTK e auto-fallback")
+	deepseekLogin := flag.Bool("deepseek-login", false, "Captura a sessao do DeepSeek Web (gratis, sem API key) de um Chrome com --remote-debugging-port=9222")
+	deepseekChat := flag.Bool("deepseek-chat", false, "Inicia chat interativo no terminal via DeepSeek Web (gratis, sem API key)")
+	deepseekCDP := flag.String("deepseek-cdp", "", "Endpoint CDP do Chrome (ex: http://127.0.0.1:9222). Padrao: DEEPSEEK_CDP_URL ou http://127.0.0.1:9222")
 	flag.Parse()
+
+	if *deepseekCDP != "" {
+		_ = os.Setenv("DEEPSEEK_CDP_URL", *deepseekCDP)
+	}
+
+	if *deepseekLogin {
+		ctx := context.Background()
+		sess, err := deepseek.CaptureFromCDP(ctx, deepseek.CDPURL())
+		if err != nil {
+			log.Fatalf("Falha ao capturar sessao DeepSeek: %v\n", err)
+		}
+		if err := deepseek.ProbeToken(ctx, sess); err != nil {
+			log.Fatalf("Token DeepSeek rejeitado: %v\n", err)
+		}
+		if err := sess.Save(deepseek.DefaultSessionFile()); err != nil {
+			log.Fatalf("Falha ao salvar sessao: %v\n", err)
+		}
+		token := sess.Token
+		if len(token) > 10 {
+			token = token[:10]
+		}
+		fmt.Printf("[deepseek] Sessao salva em %s (token %s..., %d cookies)\n", deepseek.DefaultSessionFile(), token, len(sess.Cookies))
+		return
+	}
+
+	if *deepseekChat {
+		if err := deepseek.RunTerminalChat(context.Background()); err != nil {
+			log.Fatalf("Chat DeepSeek: %v\n", err)
+		}
+		return
+	}
 
 	if *servePort != "" {
 		var agentH http.Handler
@@ -348,7 +383,6 @@ func main() {
 		}
 		return
 	}
-
 
 	if *inputFile == "" {
 		log.Fatal("Uso:\n  Empacotar: go run . -file <arquivo.html|arquivo.lin> [-algo deflate|brotli]\n  Servidor:  go run . -serve 8080")

@@ -106,6 +106,8 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 			targetModel = "free/gpt-6-luna"
 		case "kilo", "kilo-free", "kilo-auto/free":
 			targetModel = "kilo-auto/free"
+		case "mistral", "codestral", "codestral-latest":
+			targetModel = "codestral-latest"
 		case "llama", "llama-3.3":
 			targetModel = "llama-3.3-70b-versatile"
 		}

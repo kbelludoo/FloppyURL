@@ -19,6 +19,7 @@ import (
 
 	"github.com/Xelckis/floppyURL/pkg/agent"
 	"github.com/Xelckis/floppyURL/pkg/deepseek"
+	"github.com/Xelckis/floppyURL/pkg/opencode"
 	"github.com/Xelckis/floppyURL/pkg/router"
 	"github.com/Xelckis/floppyURL/pkg/server"
 	"github.com/andybalholm/brotli"
@@ -335,10 +336,24 @@ func main() {
 	deepseekLogin := flag.Bool("deepseek-login", false, "Captura a sessao do DeepSeek Web (gratis, sem API key) de um Chrome com --remote-debugging-port=9222")
 	deepseekChat := flag.Bool("deepseek-chat", false, "Inicia chat interativo no terminal via DeepSeek Web (gratis, sem API key)")
 	deepseekCDP := flag.String("deepseek-cdp", "", "Endpoint CDP do Chrome (ex: http://127.0.0.1:9222). Padrao: DEEPSEEK_CDP_URL ou http://127.0.0.1:9222")
+	opencodeModels := flag.Bool("opencode-models", false, "Lista os modelos configurados no opencode local (mesmo opencode.json/auth.json, sem abrir o opencode)")
 	flag.Parse()
 
 	if *deepseekCDP != "" {
 		_ = os.Setenv("DEEPSEEK_CDP_URL", *deepseekCDP)
+	}
+
+	if *opencodeModels {
+		oc, err := opencode.New()
+		if err != nil {
+			log.Fatalf("opencode: %v\n", err)
+		}
+		fmt.Printf("config: %v\n", oc.ConfigFiles())
+		fmt.Printf("default: %s\n", oc.DefaultModel())
+		for _, m := range oc.Models() {
+			fmt.Printf("  %-40s %s\n", m.ID, m.Name)
+		}
+		return
 	}
 
 	if *deepseekLogin {

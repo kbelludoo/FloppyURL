@@ -52,6 +52,38 @@ As chaves e modelos de IA ficam configurados no arquivo `.env`:
 
 ---
 
+## 🧠 Usar os modelos do OpenCode (sem abrir o OpenCode)
+
+O `agent-go` lê o mesmo `opencode.json`/`opencode.jsonc` e `auth.json` que o
+OpenCode usa e chama os provedores **diretamente** — não é preciso `opencode
+serve` nem abrir a interface do OpenCode.
+
+Arquivos lidos (nesta ordem, o último sobrescreve o anterior):
+
+- `$OPENCODE_CONFIG`, se definido
+- `~/.config/opencode/opencode.json` e `opencode.jsonc`
+- `opencode.json` / `.opencode/opencode.json` do diretório atual
+- `$XDG_DATA_HOME/opencode/auth.json`, `~/.local/share/opencode/auth.json`,
+  `~/.opencode/auth.json` (ou `$OPENCODE_AUTH`)
+
+Liste os modelos disponíveis:
+
+```cmd
+agent-go.exe -opencode-models
+```
+
+Eles aparecem automaticamente em `/v1/models` e no `/v1/chat/completions` pelo
+ID `provedor/modelo` (ex.: `codecraft/claude-fable-5.1`). O modelo `default`
+usa o modelo padrão configurado no OpenCode. No agente (`/agent`), o modelo
+padrão do OpenCode é o primeiro da cadeia de fallback; defina `OPENCODE_MODEL`
+para escolher outro.
+
+> O `agent-go` usa as **suas** credenciais/chaves dos provedores configurados
+> no OpenCode. O plano gratuito do gateway do OpenCode é restrito ao próprio
+> cliente OpenCode e não é contornado por este projeto.
+
+---
+
 ## 🆓 DeepSeek Web grátis (sem API key)
 
 Portado da Cassandra (Python) para Go: o agente conversa com o **chat.deepseek.com**

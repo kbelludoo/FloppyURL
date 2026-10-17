@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Xelckis/floppyURL/pkg/network"
+	"github.com/Xelckis/floppyURL/pkg/opencode"
 )
 
 type Message struct {
@@ -46,10 +47,12 @@ type ChatResponse struct {
 }
 
 type UpstreamProvider struct {
-	Name    string
-	BaseURL string
-	APIKey  string
-	Model   string
+	Name     string
+	BaseURL  string
+	APIKey   string
+	Model    string
+	Headers  map[string]string
+	NoRotate bool
 }
 
 type LLMClient struct {
@@ -58,13 +61,89 @@ type LLMClient struct {
 }
 
 func (c *LLMClient) SetModel(model string) {
-	if model != "" && len(c.Providers) > 0 {
-		c.Providers[0].Model = model
+	if model == "" || len(c.Providers) == 0 {
+		return
 	}
+	mLower := strings.ToLower(model)
+
+	// Check if any provider explicitly supports or is dedicated to this model family
+	for i, p := range c.Providers {
+		pLower := strings.ToLower(p.Name)
+		isMatch := false
+
+		if (strings.Contains(mLower, "codestral") || strings.Contains(mLower, "mistral")) && strings.Contains(pLower, "mistral") {
+			isMatch = true
+		} else if strings.Contains(mLower, "deepseek") && (strings.Contains(pLower, "deepseek") || strings.Contains(strings.ToLower(p.Model), "deepseek")) {
+			isMatch = true
+		} else if strings.Contains(mLower, "gemini") && (strings.Contains(pLower, "gemini") || strings.Contains(strings.ToLower(p.Model), "gemini")) {
+			isMatch = true
+		} else if strings.Contains(mLower, "luna") && (strings.Contains(pLower, "luna") || strings.Contains(strings.ToLower(p.Model), "luna")) {
+			isMatch = true
+		} else if strings.Contains(mLower, "llama") && (strings.Contains(pLower, "groq") || strings.Contains(pLower, "openrouter")) {
+			isMatch = true
+		} else if strings.Contains(mLower, "kilo") && strings.Contains(pLower, "kilo") {
+			isMatch = true
+		} else if strings.EqualFold(p.Model, model) {
+			isMatch = true
+		}
+
+		if isMatch {
+			c.Providers[i].Model = model
+			if i > 0 {
+				c.Providers[0], c.Providers[i] = c.Providers[i], c.Providers[0]
+			}
+			return
+		}
+	}
+
+	c.Providers[0].Model = model
 }
 
 func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 	var providers []UpstreamProvider
+
+	// 0. opencode providers (same models/auth as the opencode CLI, called
+	// directly — no `opencode serve` process required).
+	if oc, err := opencode.New(); err == nil {
+		defaultID := os.Getenv("OPENCODE_MODEL")
+		if defaultID == "" {
+			defaultID = oc.DefaultModel()
+		}
+
+		// One model per provider is enough for the fallback chain: the
+		// default model first, then the first model of every other provider.
+		seenProvider := make(map[string]bool)
+		var ordered []*opencode.Model
+		add := func(m *opencode.Model) {
+			if m == nil || seenProvider[m.ProviderID] {
+				return
+			}
+			seenProvider[m.ProviderID] = true
+			ordered = append(ordered, m)
+		}
+		if defaultID != "" {
+			if m, err := oc.Resolve(defaultID); err == nil {
+				add(m)
+			}
+		}
+		for _, m := range oc.Models() {
+			add(m)
+		}
+
+		for _, m := range ordered {
+			providers = append(providers, UpstreamProvider{
+				Name:     "opencode-" + m.ID,
+				BaseURL:  m.BaseURL,
+				APIKey:   m.APIKey,
+				Model:    m.ModelID,
+				Headers:  m.Headers,
+				NoRotate: true,
+			})
+		}
+		if len(ordered) > 0 {
+			log.Printf("[llm] opencode: %d modelo(s) carregado(s) de %s", len(ordered), strings.Join(oc.ConfigFiles(), ", "))
+		}
+	}
 
 	// 1. Apinex Gateway (Modelos 100% Free: Gemini 3.8 Flash, DeepSeek v4.1 Flash, GPT-6 Luna)
 	if apinexKey := os.Getenv("APINEX_API_KEY"); apinexKey != "" {
@@ -116,6 +195,20 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 				Model:   "deepseek-v4-flash:free",
 			})
 		}
+	}
+
+	// 2.5 Mistral AI (Modelos 100% Free / Codestral)
+	if mistralKey := os.Getenv("MISTRAL_API_KEY"); mistralKey != "" {
+		mModel := os.Getenv("MISTRAL_MODEL")
+		if mModel == "" {
+			mModel = "codestral-latest"
+		}
+		providers = append(providers, UpstreamProvider{
+			Name:    "mistral-codestral",
+			BaseURL: "https://api.mistral.ai/v1",
+			APIKey:  mistralKey,
+			Model:   mModel,
+		})
 	}
 
 	// 3. Fallback Kilo Gateway (Modelo 100% Free: kilo-auto/free)
@@ -170,7 +263,7 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 
 func (c *LLMClient) Complete(ctx context.Context, messages []Message, tools []ToolDef) (*Message, string, error) {
 	if len(c.Providers) == 0 {
-		return nil, "", fmt.Errorf("nenhum provedor LLM configurado. Defina APINEX_API_KEY, TOKENHARBOR_API_KEY, KILO_API_KEY, GROQ_API_KEY ou OPENROUTER_API_KEY")
+		return nil, "", fmt.Errorf("nenhum provedor LLM configurado. Defina MISTRAL_API_KEY, APINEX_API_KEY, TOKENHARBOR_API_KEY, KILO_API_KEY, GROQ_API_KEY ou OPENROUTER_API_KEY")
 	}
 
 	var lastErr error
@@ -224,12 +317,22 @@ func (c *LLMClient) completeWithProvider(ctx context.Context, prov UpstreamProvi
 		return nil, "", fmt.Errorf("failed to create http request: %w", err)
 	}
 
+	for k, v := range prov.Headers {
+		httpReq.Header.Set(k, v)
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+prov.APIKey)
+	if prov.APIKey != "" && httpReq.Header.Get("Authorization") == "" && httpReq.Header.Get("X-Api-Key") == "" {
+		httpReq.Header.Set("Authorization", "Bearer "+prov.APIKey)
+	}
 	httpReq.Header.Set("HTTP-Referer", "https://github.com/kbelludoo/FloppyURL")
 	httpReq.Header.Set("X-Title", "Agent Go")
 
-	resp, err := c.HTTPClient.Do(httpReq)
+	httpClient := c.HTTPClient
+	if prov.NoRotate {
+		httpClient = &http.Client{}
+	}
+
+	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return nil, "", fmt.Errorf("http request failed: %w", err)
 	}
@@ -248,9 +351,14 @@ func (c *LLMClient) completeWithProvider(ctx context.Context, prov UpstreamProvi
 			if retryBytes, err := json.Marshal(reqBodyNoTools); err == nil {
 				retryReq, err := http.NewRequestWithContext(provCtx, "POST", url, bytes.NewReader(retryBytes))
 				if err == nil {
+					for k, v := range prov.Headers {
+						retryReq.Header.Set(k, v)
+					}
 					retryReq.Header.Set("Content-Type", "application/json")
-					retryReq.Header.Set("Authorization", "Bearer "+prov.APIKey)
-					if retryResp, err := c.HTTPClient.Do(retryReq); err == nil {
+					if prov.APIKey != "" && retryReq.Header.Get("Authorization") == "" && retryReq.Header.Get("X-Api-Key") == "" {
+						retryReq.Header.Set("Authorization", "Bearer "+prov.APIKey)
+					}
+					if retryResp, err := httpClient.Do(retryReq); err == nil {
 						defer retryResp.Body.Close()
 						if retryResp.StatusCode >= 200 && retryResp.StatusCode < 300 {
 							if rBody, err := io.ReadAll(retryResp.Body); err == nil {

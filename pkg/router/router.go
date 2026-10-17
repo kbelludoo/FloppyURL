@@ -10,11 +10,13 @@ import (
 	"time"
 
 	"github.com/Xelckis/floppyURL/pkg/network"
+	"github.com/Xelckis/floppyURL/pkg/opencode"
 )
 
 // Router implements an OpenAI-compatible gateway with token compression and auto-fallback.
 type Router struct {
 	pool *Pool
+	oc   *opencode.Client
 }
 
 // NewRouter creates and initializes a Router using environment variables.
@@ -28,6 +30,10 @@ func NewRouter() *Router {
 	// 2. TokenHarbor Gateway (Modelos 100% Free: DeepSeek v4.1 Flash Free, DeepSeek v4 Flash Free)
 	thKey := os.Getenv("TOKENHARBOR_API_KEY")
 	thBase := "https://tokenharbor.ai/v1"
+
+	// 2.5 Mistral AI (Modelos 100% Free / Codestral)
+	mistralKey := os.Getenv("MISTRAL_API_KEY")
+	mistralBase := "https://api.mistral.ai/v1"
 
 	// 3. Kilo Gateway (kilo-auto/free)
 	kiloKey := os.Getenv("KILO_API_KEY")
@@ -85,6 +91,20 @@ func NewRouter() *Router {
 		})
 	}
 
+	if mistralKey != "" {
+		mModel := os.Getenv("MISTRAL_MODEL")
+		if mModel == "" {
+			mModel = "codestral-latest"
+		}
+		defaultChain = append(defaultChain, Provider{
+			Name:       "mistral-codestral",
+			BaseURL:    mistralBase,
+			APIKey:     mistralKey,
+			DefaultMod: mModel,
+			Active:     true,
+		})
+	}
+
 	if kiloKey != "" {
 		defaultChain = append(defaultChain, Provider{
 			Name:       "kilo-gateway-free",
@@ -129,9 +149,22 @@ func NewRouter() *Router {
 	pool.RegisterRoute("free/gpt-6-luna", defaultChain)
 	pool.RegisterRoute("kilo", defaultChain)
 	pool.RegisterRoute("kilo-auto/free", defaultChain)
+	pool.RegisterRoute("mistral", defaultChain)
+	pool.RegisterRoute("codestral", defaultChain)
+	pool.RegisterRoute("codestral-latest", defaultChain)
 	pool.RegisterRoute("llama", defaultChain)
 
-	return &Router{pool: pool}
+	// Direct bridge to the models configured in the local opencode install.
+	// Uses the same config/auth as the opencode CLI, but without running it.
+	var oc *opencode.Client
+	if client, err := opencode.New(); err == nil {
+		oc = client
+		log.Printf("[RouterGo] opencode direct bridge: %d modelo(s) de %s", len(client.Models()), strings.Join(client.ConfigFiles(), ", "))
+	} else {
+		log.Printf("[RouterGo] opencode direct bridge indisponivel: %v", err)
+	}
+
+	return &Router{pool: pool, oc: oc}
 }
 
 // Handler returns the http.Handler for the router subroutes (/v1/chat/completions, /v1/models, /v1/health).
@@ -187,7 +220,21 @@ func (rt *Router) handleModels(w http.ResponseWriter, r *http.Request) {
 		{ID: "deepseek-web", Object: "model", Created: time.Now().Unix(), OwnedBy: "deepseek-web"},
 		{ID: "deepseek-web-thinking", Object: "model", Created: time.Now().Unix(), OwnedBy: "deepseek-web"},
 		{ID: "deepseek-web-expert", Object: "model", Created: time.Now().Unix(), OwnedBy: "deepseek-web"},
+		{ID: "codestral-latest", Object: "model", Created: time.Now().Unix(), OwnedBy: "mistralai"},
+		{ID: "mistral", Object: "model", Created: time.Now().Unix(), OwnedBy: "mistralai"},
 		{ID: "default", Object: "model", Created: time.Now().Unix(), OwnedBy: "routergo"},
+	}
+
+	// Models configured in the local opencode install (no server required)
+	if rt.oc != nil {
+		for _, m := range rt.oc.Models() {
+			models = append(models, ModelItem{
+				ID:      m.ID,
+				Object:  "model",
+				Created: time.Now().Unix(),
+				OwnedBy: m.ProviderID,
+			})
+		}
 	}
 
 	// Dynamic live models from arena.ai
@@ -283,6 +330,30 @@ func (rt *Router) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// 2.5 Direct opencode provider: same models and credentials as the opencode
+	// CLI, without starting `opencode serve`.
+	if rt.oc != nil {
+		directModel := requestedModel
+		isDefaultAlias := directModel == "" || directModel == "default"
+		if isDefaultAlias {
+			if d := rt.oc.DefaultModel(); d != "" {
+				directModel = d
+			}
+		}
+		if _, resolveErr := rt.oc.Resolve(directModel); resolveErr == nil {
+			ocResp, ocModel, proxyErr := rt.oc.Proxy(r.Context(), directModel, reqMap)
+			if proxyErr == nil {
+				copyUpstreamResponse(w, ocResp, "opencode-direct/"+ocModel.ID, isStream)
+				return
+			}
+			log.Printf("[RouterGo] opencode direct failed (%s): %v", directModel, proxyErr)
+			if !isDefaultAlias {
+				writeRouterError(w, http.StatusBadGateway, proxyErr)
+				return
+			}
+		}
+	}
+
 	// 3. If model is an OpenCode native model (e.g. mimo, opencode/mimo-v2.6-flash-free,
 	// codecraft/claude-fable-5), route via OpenCodeBridge with fallback to pool!
 	if strings.HasPrefix(requestedModel, "opencode/") || strings.HasPrefix(requestedModel, "codecraft/") || strings.Contains(requestedModel, "mimo") || strings.Contains(requestedModel, "fable") {
@@ -319,19 +390,28 @@ func (rt *Router) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 
 	if err != nil {
 		log.Printf("[RouterGo Error] Fallback chain failed: %v", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadGateway)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"error": map[string]string{
-				"message": err.Error(),
-				"type":    "routergo_upstream_failure",
-			},
-		})
+		writeRouterError(w, http.StatusBadGateway, err)
 		return
 	}
+	copyUpstreamResponse(w, resp, providerUsed.Name, isStream)
+}
+
+func writeRouterError(w http.ResponseWriter, status int, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": map[string]string{
+			"message": err.Error(),
+			"type":    "routergo_upstream_failure",
+		},
+	})
+}
+
+// copyUpstreamResponse transparently proxies an upstream response (streaming or
+// JSON) back to the client.
+func copyUpstreamResponse(w http.ResponseWriter, resp *http.Response, provider string, isStream bool) {
 	defer resp.Body.Close()
 
-	// 3. Transparently proxy response (streaming or json) back to client
 	for k, vv := range resp.Header {
 		// Avoid copying hop-by-hop headers
 		if strings.EqualFold(k, "Transfer-Encoding") || strings.EqualFold(k, "Content-Length") {
@@ -341,7 +421,7 @@ func (rt *Router) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 			w.Header().Add(k, v)
 		}
 	}
-	w.Header().Set("X-Router-Provider", providerUsed.Name)
+	w.Header().Set("X-Router-Provider", provider)
 	w.WriteHeader(resp.StatusCode)
 
 	if flusher, ok := w.(http.Flusher); ok && isStream {
@@ -356,7 +436,7 @@ func (rt *Router) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 				break
 			}
 		}
-	} else {
-		io.Copy(w, resp.Body)
+		return
 	}
+	io.Copy(w, resp.Body)
 }

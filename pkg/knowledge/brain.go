@@ -356,6 +356,7 @@ func (b *Brain) LoadBinary(filePath string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.dim = int(dim)
+	b.chunks = make([]KnowledgeChunk, 0, numChunks)
 
 	for i := 0; i < int(numChunks); i++ {
 		id, err := readString()

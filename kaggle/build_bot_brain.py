@@ -146,7 +146,7 @@ def main():
     print(f"       Dimensão vetorial: {dim}")
 
     # 5. Synthesize Procedural Knowledge Base
-    target_chunks = int(os.environ.get("TARGET_CHUNKS", "12500"))
+    target_chunks = int(os.environ.get("TARGET_CHUNKS", "48500"))
     chunks = list(KNOWLEDGE_SEEDS)
     
     specialized_domains = [
@@ -159,7 +159,12 @@ def main():
         ("Idle Incremental Prestige & Multiplier Calculus", "idle_prestige", "idle,rebirth,prestige,formula,multiplier,huntera"),
         ("Tibidle & Baiak Fleet Auto-Healing Team Sync", "team_heal", "baiak,tibidle,healer,sio,uh,party,coordination"),
         ("Autonomous Port Recovery & Systemd Watchdog", "self_healing", "watchdog,systemd,crash,socket,recovery,port3006"),
-        ("Low-RAM VPS Swappiness & ZRAM Memory Tuning", "sysadmin_tuning", "oracle,vps,ram,swappiness,zram,cgroup,linux")
+        ("Low-RAM VPS Swappiness & ZRAM Memory Tuning", "sysadmin_tuning", "oracle,vps,ram,swappiness,zram,cgroup,linux"),
+        ("Autonomous Packet Header & Checksum Parsing", "packet_stream", "protocol,xtea,adler32,endian,buffer,binary"),
+        ("Zero-Lock Atomic State & Health Metrics", "lockless_metrics", "atomic,int64,bool,lockless,ticks,concurrency"),
+        ("Anti-Detection Human Mouse & Action Bezier", "bezier_path", "mouse,humanizer,bezier,trajectory,jitter,entropy"),
+        ("Cloudflared Multi-Ingress Zero-RAM Tunneling", "cloudflared_ingress", "tunnel,cloudflared,ingress,multiplexing,ports"),
+        ("Automated Memory Profile & Goroutine Leak Reaping", "pprof_reaper", "pprof,leak,heap,goroutine,watchdog,kill")
     ]
     
     idx = 0
@@ -170,19 +175,19 @@ def main():
             "id": f"{cat}_procedure_{var}",
             "title": f"{title} - Procedimento Avançado #{var}",
             "category": cat,
-            "tags": [t.strip() for t in tags.split(",")] + [f"var{var}", "production", "go", "highlevel", "wealth"],
-            "content": f"Procedimento de engenharia e tática de jogo #{var} para {title}. Otimização de ROI de XP e Gold, rotação de habilidades de combate, gerenciamento concorrente com Goroutines sem alocação de memória e protocolo de resiliência autônoma no Linux systemd para operação 24/7."
+            "tags": [t.strip() for t in tags.split(",")] + [f"var{var}", "production", "go", "highlevel", "wealth", "sysadmin"],
+            "content": f"Procedimento de engenharia e tática de jogo #{var} para {title}. Padrão Go puro de alta concorrência: loop desvinculado de I/O bloqueante com sync.Pool e atomic.Int64. Otimização de latência TCP com KeepAlive e SetNoDelay(true). Resiliência com alocação zero no hot-path e autocura no Linux systemd para operação 24/7."
         })
         idx += 1
 
-    print(f"[3/5] 📚 Total de procedimentos compilados: {len(chunks)} chunks")
+    print(f"[3/5] 📚 Total de procedimentos compilados: {len(chunks)} chunks (Meta: ~100 MB)")
 
     # 6. Compute Neural Embeddings (Accelerated on GPU)
     print(f"[4/5] ⚡ Gerando embeddings neurais acelerados...")
     start_time = time.time()
     texts_to_embed = [f"{c['title']} | Tags: {','.join(c['tags'])} | {c['content']}" for c in chunks]
     
-    batch_size = 256 if device == "cuda" else 32
+    batch_size = 256
     embeddings = model.encode(
         texts_to_embed,
         batch_size=batch_size,

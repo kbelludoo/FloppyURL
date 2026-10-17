@@ -37,6 +37,12 @@ Hostname: %s
 - vps_bots_status    → get real-time health, ports, and RAM for all 9 VPS bots
 - vps_bot_restart    → restart a specific bot service by ID ('huntera', 'tibidle', 'sigma', 'leveling', 'pokeidle', 'pokeidleworld', 'kickminer', 'twitchminer', 'baiak')
 - vps_bot_logs       → get recent logs for any bot to diagnose crashes
+- browser_open       → open a web page in specialist Go browser, returning numbered interactive elements (#1, #2...)
+- browser_snapshot   → inspect current interactive elements and visible text on the page
+- browser_click      → click an interactive element by numeric ID (#1, #2...), navigating or submitting forms
+- browser_type       → type text into an input or textarea element by numeric ID
+- browser_extract    → extract specific data, links, or text from the current page
+- browser_run_goal   → launch autonomous multi-step Web Navigator Specialist to browse, click and complete a mission
 - browser_navigate   → navigate to any URL with ultra-lightweight Go engine (<20MB RAM), extracting structured Markdown, headings and links
 - bash_exec          → run any shell command on this Linux server
 - read_file          → read any file on the filesystem

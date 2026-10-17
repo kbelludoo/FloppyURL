@@ -14,6 +14,7 @@ import (
 
 	"github.com/kbelludoo/FloppyURL/pkg/knowledge"
 	"github.com/kbelludoo/FloppyURL/pkg/memory"
+	"github.com/kbelludoo/FloppyURL/pkg/navigator"
 	"github.com/kbelludoo/FloppyURL/pkg/neural"
 	"github.com/kbelludoo/FloppyURL/pkg/scheduler"
 	"github.com/kbelludoo/FloppyURL/pkg/server"
@@ -22,6 +23,8 @@ import (
 	"github.com/kbelludoo/FloppyURL/pkg/verifier"
 	"github.com/kbelludoo/FloppyURL/pkg/watchdog"
 )
+
+var globalNavigator = navigator.NewAutonomousNavigator()
 
 // ToolDef defines a callable function for the LLM.
 type ToolDef struct {
@@ -148,6 +151,110 @@ var AvailableTools = []ToolDef{
 					}
 				},
 				"required": ["url"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "browser_open",
+			Description: "Opens a web page in the specialist Go browser session and returns a token-optimized snapshot with numbered interactive elements (#1, #2, etc.).",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"url": {
+						"type": "string",
+						"description": "Destination web address (e.g. https://go.dev)"
+					}
+				},
+				"required": ["url"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "browser_snapshot",
+			Description: "Returns the current page snapshot with labeled interactive elements (#1, #2, etc.) and visible text.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "browser_click",
+			Description: "Clicks an interactive element on the current page by its numeric index (e.g. 1, 2, 3), navigating to links or submitting forms.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"element_id": {
+						"type": "integer",
+						"description": "The numeric ID of the element to click (e.g. 1, 2, 3)"
+					}
+				},
+				"required": ["element_id"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "browser_type",
+			Description: "Types text into an input or textarea field on the current page by its numeric index.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"element_id": {
+						"type": "integer",
+						"description": "The numeric ID of the input field"
+					},
+					"text": {
+						"type": "string",
+						"description": "Text to type into the field"
+					}
+				},
+				"required": ["element_id", "text"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "browser_extract",
+			Description: "Extracts specific text or keywords from the current page in the browser session.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"target": {
+						"type": "string",
+						"description": "Keyword, topic or 'all' to extract"
+					}
+				},
+				"required": ["target"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "browser_run_goal",
+			Description: "Launches the autonomous Web Navigation Specialist Agent loop to complete a multi-step objective on the web (navigating, clicking, searching and extracting automatically).",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"goal": {
+						"type": "string",
+						"description": "High-level goal (e.g. 'Entrar no site, pesquisar por Golang e resumir o primeiro artigo')"
+					},
+					"start_url": {
+						"type": "string",
+						"description": "Initial URL to start browsing from"
+					}
+				},
+				"required": ["goal"]
 			}`),
 		},
 	},
@@ -952,6 +1059,93 @@ func ExecuteTool(ctx context.Context, name, arguments string) (string, error) {
 		}
 		cmdArgs += fmt.Sprintf("%q", args.URL)
 		return RunBash(ctx, cmdArgs)
+
+	case "browser_open":
+		var args struct {
+			URL string `json:"url"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for browser_open: %w", err)
+		}
+		snap, err := globalNavigator.Session.Navigate(ctx, args.URL)
+		if err != nil {
+			return fmt.Sprintf("Erro ao abrir página %s: %v", args.URL, err), nil
+		}
+		return snap.RenderLLMSnapshot(40), nil
+
+	case "browser_snapshot":
+		if globalNavigator.Session.Current == nil {
+			return "Nenhuma página aberta no momento. Use browser_open primeiro.", nil
+		}
+		return globalNavigator.Session.Current.RenderLLMSnapshot(40), nil
+
+	case "browser_click":
+		var args struct {
+			ElementID int `json:"element_id"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for browser_click: %w", err)
+		}
+		snap, msg, err := globalNavigator.Session.Click(ctx, args.ElementID)
+		if err != nil {
+			return fmt.Sprintf("Erro ao clicar no elemento #%d: %v", args.ElementID, err), nil
+		}
+		return fmt.Sprintf("%s\n\n%s", msg, snap.RenderLLMSnapshot(40)), nil
+
+	case "browser_type":
+		var args struct {
+			ElementID int    `json:"element_id"`
+			Text      string `json:"text"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for browser_type: %w", err)
+		}
+		msg, err := globalNavigator.Session.Type(args.ElementID, args.Text)
+		if err != nil {
+			return fmt.Sprintf("Erro ao digitar: %v", err), nil
+		}
+		return msg, nil
+
+	case "browser_extract":
+		var args struct {
+			Target string `json:"target"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for browser_extract: %w", err)
+		}
+		return globalNavigator.Session.Extract(args.Target), nil
+
+	case "browser_run_goal":
+		var args struct {
+			Goal     string `json:"goal"`
+			StartURL string `json:"start_url"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for browser_run_goal: %w", err)
+		}
+
+		nav := navigator.NewAutonomousNavigator()
+		llmClient := NewLLMClient("", "", "")
+
+		completer := func(cctx context.Context, sysPrompt, userPrompt string) (string, error) {
+			msgs := []Message{
+				{Role: "system", Content: sysPrompt},
+				{Role: "user", Content: userPrompt},
+			}
+			msg, _, err := llmClient.Complete(cctx, msgs, nil)
+			if err != nil {
+				return "", err
+			}
+			return msg.Content, nil
+		}
+
+		res, err := nav.Run(ctx, args.StartURL, args.Goal, completer)
+		if err != nil {
+			return fmt.Sprintf("Erro na navegação autônoma: %v", err), nil
+		}
+
+		return fmt.Sprintf("=== MISSÃO DE NAVEGAÇÃO CONCLUÍDA ===\nSucesso: %t\nPassos dados: %d (%d ms)\nURL Final: %s\n\nRESPOSTA:\n%s\n\nTRAJETÓRIA:\n%s",
+			res.Success, res.StepsTaken, res.DurationMs, res.FinalURL, res.FinalAnswer, strings.Join(res.Trajectory, "\n")), nil
 
 	case "list_available_models":
 		return `Modelos recomendados no NVIDIA NIM (gratuitos):

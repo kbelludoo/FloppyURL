@@ -181,30 +181,32 @@ def main():
         chunks[i]["vector"] = emb.tolist()
 
     # 6. Export Binary File (GOBRAIN1 Format)
+    bin_paths = [Path("knowledge_brain.bin")]
     out_dir = Path("output")
     out_dir.mkdir(exist_ok=True)
-    bin_path = out_dir / "knowledge_brain.bin"
-    print(f"[5/5] 💾 Gravando arquivo binário final: {bin_path}...")
+    bin_paths.append(out_dir / "knowledge_brain.bin")
+    
+    for bin_path in bin_paths:
+        print(f"[5/5] 💾 Gravando arquivo binário: {bin_path}...")
+        with open(bin_path, "wb") as f:
+            # Header: GOBRAIN1 (8 bytes) + Version (uint32) + NumChunks (uint32) + Dim (uint16)
+            f.write(b"GOBRAIN1")
+            f.write(struct.pack("<I", 1))            # Version 1
+            f.write(struct.pack("<I", len(chunks)))  # Total Chunks
+            f.write(struct.pack("<H", dim))          # Vector Dim (384)
 
-    with open(bin_path, "wb") as f:
-        # Header: GOBRAIN1 (8 bytes) + Version (uint32) + NumChunks (uint32) + Dim (uint16)
-        f.write(b"GOBRAIN1")
-        f.write(struct.pack("<I", 1))            # Version 1
-        f.write(struct.pack("<I", len(chunks)))  # Total Chunks
-        f.write(struct.pack("<H", dim))          # Vector Dim (384)
-
-        for c in chunks:
-            # Strings (uint32 length prefix + bytes)
-            for s in [c["id"], c["title"], c["category"], ",".join(c["tags"]), c["content"]]:
-                encoded = s.encode("utf-8")
-                f.write(struct.pack("<I", len(encoded)))
-                f.write(encoded)
-            
-            # Vector (uint16 len + float32 array)
-            vec = c["vector"]
-            f.write(struct.pack("<H", len(vec)))
-            for val in vec:
-                f.write(struct.pack("<f", float(val)))
+            for c in chunks:
+                # Strings (uint32 length prefix + bytes)
+                for s in [c["id"], c["title"], c["category"], ",".join(c["tags"]), c["content"]]:
+                    encoded = s.encode("utf-8")
+                    f.write(struct.pack("<I", len(encoded)))
+                    f.write(encoded)
+                
+                # Vector (uint16 len + float32 array)
+                vec = c["vector"]
+                f.write(struct.pack("<H", len(vec)))
+                for val in vec:
+                    f.write(struct.pack("<f", float(val)))
 
     file_size_kb = os.path.getsize(bin_path) / 1024
     print("=" * 60)

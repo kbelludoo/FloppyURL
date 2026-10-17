@@ -133,11 +133,9 @@ func (p *PipelineOrchestrator) downloadAndHotSwap(ctx context.Context) error {
 		return fmt.Errorf("atomic rename: %w", err)
 	}
 
-	// Hot-swap in running brain instance
+	// Hot-swap in running brain instance (Opção A: zero-RAM on-demand)
 	brain := knowledge.GetBrain()
-	if err := brain.LoadBinary(p.destBrain); err != nil {
-		return fmt.Errorf("hot reload binary: %w", err)
-	}
+	brain.SetOnDemandPath(p.destBrain)
 
 	p.mu.Lock()
 	p.lastTrained = time.Now()

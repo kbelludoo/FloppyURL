@@ -1,6 +1,7 @@
 package knowledge
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
@@ -36,10 +37,12 @@ type SearchResult struct {
 
 // Brain is the high-performance in-memory vector database running in pure Go.
 type Brain struct {
-	mu     sync.RWMutex
-	chunks []KnowledgeChunk
-	dim    int
-	loaded bool
+	mu           sync.RWMutex
+	chunks       []KnowledgeChunk
+	dim          int
+	loaded       bool
+	onDemandPath string
+	totalOnDisk  int
 }
 
 var (
@@ -52,7 +55,7 @@ func GetBrain() *Brain {
 		defaultBrain = NewBrain(DefaultDim)
 		// Seed with essential built-in Go bot knowledge
 		defaultBrain.seedBuiltins()
-		// Attempt to load larger brain file from disk if available
+		// Check for larger compiled brain file on disk (Opção A: Zero-RAM On-Demand)
 		home, _ := os.UserHomeDir()
 		paths := []string{
 			"data/knowledge_brain.bin",
@@ -61,7 +64,7 @@ func GetBrain() *Brain {
 		}
 		for _, p := range paths {
 			if _, err := os.Stat(p); err == nil {
-				_ = defaultBrain.LoadBinary(p)
+				defaultBrain.SetOnDemandPath(p)
 				break
 			}
 		}
@@ -87,11 +90,28 @@ func (b *Brain) AddChunk(chunk KnowledgeChunk) {
 	b.loaded = true
 }
 
-// TotalChunks returns the number of active knowledge items.
+// SetOnDemandPath configures the Brain to query a large binary knowledge file directly
+// from disk on demand, keeping baseline memory footprint at 0 MB without loading vectors to the heap.
+func (b *Brain) SetOnDemandPath(filePath string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.onDemandPath = filePath
+	b.totalOnDisk = getNumChunksFromHeader(filePath)
+	b.loaded = true
+}
+
+// OnDemandPath returns the active on-demand binary path if configured.
+func (b *Brain) OnDemandPath() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.onDemandPath
+}
+
+// TotalChunks returns the total number of knowledge chunks (in-memory + on-demand disk).
 func (b *Brain) TotalChunks() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return len(b.chunks)
+	return len(b.chunks) + b.totalOnDisk
 }
 
 // CosineSimilarity calculates the normalized dot product between two vectors.
@@ -113,16 +133,29 @@ func CosineSimilarity(a, b []float32) float64 {
 	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
-// SearchByVector performs brute-force exact Cosine similarity search (ultra-fast for < 50k items in Go).
+// SearchByVector performs Cosine similarity search (using on-demand streaming if configured, or in-memory).
 func (b *Brain) SearchByVector(queryVec []float32, topK int) []SearchResult {
+	b.mu.RLock()
+	onDemand := b.onDemandPath
+	b.mu.RUnlock()
+
+	var diskResults []SearchResult
+	if onDemand != "" {
+		if res, err := SearchOnDemand(onDemand, queryVec, topK); err == nil {
+			diskResults = res
+		}
+	}
+
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	if len(b.chunks) == 0 || len(queryVec) == 0 {
-		return nil
+	if len(b.chunks) == 0 {
+		return diskResults
 	}
 
-	results := make([]SearchResult, 0, len(b.chunks))
+	results := make([]SearchResult, 0, len(b.chunks)+len(diskResults))
+	results = append(results, diskResults...)
+
 	for _, chunk := range b.chunks {
 		if len(chunk.Vector) == len(queryVec) {
 			sim := CosineSimilarity(queryVec, chunk.Vector)
@@ -146,18 +179,35 @@ func (b *Brain) SearchByVector(queryVec []float32, topK int) []SearchResult {
 // SearchSemantic converts any natural language query into a 384-dim dense vector
 // in pure Go, performs Cosine Similarity search and blends with keyword boost for hybrid retrieval.
 func (b *Brain) SearchSemantic(query string, topK int) []SearchResult {
+	if strings.TrimSpace(query) == "" {
+		return nil
+	}
+
+	b.mu.RLock()
+	onDemand := b.onDemandPath
+	b.mu.RUnlock()
+
+	var diskResults []SearchResult
+	if onDemand != "" {
+		if res, err := SearchOnDemandSemantic(onDemand, query, topK); err == nil {
+			diskResults = res
+		}
+	}
+
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	if len(b.chunks) == 0 || strings.TrimSpace(query) == "" {
-		return nil
+	if len(b.chunks) == 0 {
+		return diskResults
 	}
 
 	embedder := GetEmbedder()
 	qVec := embedder.Embed(query)
 	terms := strings.Fields(strings.ToLower(query))
 
-	results := make([]SearchResult, 0, len(b.chunks))
+	results := make([]SearchResult, 0, len(b.chunks)+len(diskResults))
+	results = append(results, diskResults...)
+
 	for _, chunk := range b.chunks {
 		sim := 0.0
 		if len(chunk.Vector) == len(qVec) {
@@ -454,3 +504,326 @@ O GOMEMLIMIT (introduzido no Go 1.19) avisa o runtime para rodar o Garbage Colle
 		},
 	}...)
 }
+
+type countingReader struct {
+	r         io.Reader
+	bytesRead int64
+}
+
+func (cr *countingReader) Read(p []byte) (int, error) {
+	n, err := cr.r.Read(p)
+	cr.bytesRead += int64(n)
+	return n, err
+}
+
+func getNumChunksFromHeader(filePath string) int {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	header := make([]byte, 18)
+	if _, err := io.ReadFull(f, header); err != nil {
+		return 0
+	}
+	if string(header[:8]) != MagicHeader {
+		return 0
+	}
+	numChunks := binary.LittleEndian.Uint32(header[12:16])
+	return int(numChunks)
+}
+
+type streamCandidate struct {
+	offset int64
+	score  float64
+}
+
+// SearchOnDemand performs high-speed streaming cosine similarity search directly against
+// the on-disk binary brain without loading all chunks/vectors into heap memory.
+// RAM usage during search: < 1 MB. RAM usage in background: 0 MB.
+func SearchOnDemand(filePath string, queryVec []float32, topK int) ([]SearchResult, error) {
+	if topK <= 0 {
+		topK = 5
+	}
+	f, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	cr := &countingReader{r: f}
+	br := bufio.NewReaderSize(cr, 128*1024) // 128KB buffer for streaming
+
+	// 1. Read header (18 bytes)
+	magic := make([]byte, 8)
+	if _, err := io.ReadFull(br, magic); err != nil || string(magic) != MagicHeader {
+		return nil, fmt.Errorf("invalid brain file magic header")
+	}
+
+	var u4 [4]byte
+	var u2 [2]byte
+
+	if _, err := io.ReadFull(br, u4[:]); err != nil {
+		return nil, err
+	}
+	_ = binary.LittleEndian.Uint32(u4[:]) // Version
+
+	if _, err := io.ReadFull(br, u4[:]); err != nil {
+		return nil, err
+	}
+	numChunks := binary.LittleEndian.Uint32(u4[:])
+
+	if _, err := io.ReadFull(br, u2[:]); err != nil {
+		return nil, err
+	}
+	dim := binary.LittleEndian.Uint16(u2[:])
+
+	if int(dim) != len(queryVec) {
+		return nil, fmt.Errorf("dimension mismatch: file has %d, query has %d", dim, len(queryVec))
+	}
+
+	// Calculate L2 norm of queryVec
+	var normQuery float64
+	for _, v := range queryVec {
+		normQuery += float64(v * v)
+	}
+	normQuery = math.Sqrt(normQuery)
+	if normQuery == 0 {
+		normQuery = 1.0
+	}
+
+	// Top-K tracking
+	candidates := make([]streamCandidate, 0, topK+1)
+
+	// Reusable buffer for vector bytes (dim * 4 bytes)
+	vecBytesLen := int(dim) * 4
+	vecBuf := make([]byte, vecBytesLen)
+
+	for i := 0; i < int(numChunks); i++ {
+		// Exact stream position where this chunk begins
+		chunkOffset := cr.bytesRead - int64(br.Buffered())
+
+		// Read lengths and discard string contents without heap allocations
+		// ID
+		if _, err := io.ReadFull(br, u4[:]); err != nil {
+			break
+		}
+		idLen := int(binary.LittleEndian.Uint32(u4[:]))
+		if _, err := br.Discard(idLen); err != nil {
+			break
+		}
+
+		// Title
+		if _, err := io.ReadFull(br, u4[:]); err != nil {
+			break
+		}
+		titleLen := int(binary.LittleEndian.Uint32(u4[:]))
+		if _, err := br.Discard(titleLen); err != nil {
+			break
+		}
+
+		// Category
+		if _, err := io.ReadFull(br, u4[:]); err != nil {
+			break
+		}
+		catLen := int(binary.LittleEndian.Uint32(u4[:]))
+		if _, err := br.Discard(catLen); err != nil {
+			break
+		}
+
+		// Tags
+		if _, err := io.ReadFull(br, u4[:]); err != nil {
+			break
+		}
+		tagsLen := int(binary.LittleEndian.Uint32(u4[:]))
+		if _, err := br.Discard(tagsLen); err != nil {
+			break
+		}
+
+		// Content
+		if _, err := io.ReadFull(br, u4[:]); err != nil {
+			break
+		}
+		contentLen := int(binary.LittleEndian.Uint32(u4[:]))
+		if _, err := br.Discard(contentLen); err != nil {
+			break
+		}
+
+		// Vector length (uint16)
+		if _, err := io.ReadFull(br, u2[:]); err != nil {
+			break
+		}
+		chunkVecLen := int(binary.LittleEndian.Uint16(u2[:]))
+
+		if chunkVecLen != int(dim) {
+			if _, err := br.Discard(chunkVecLen * 4); err != nil {
+				break
+			}
+			continue
+		}
+
+		// Read vector bytes into reusable buffer
+		if _, err := io.ReadFull(br, vecBuf); err != nil {
+			break
+		}
+
+		// Fast Cosine similarity with 4x unrolling
+		var dot, normB float64
+		k := 0
+		for ; k <= int(dim)-4; k += 4 {
+			b0 := binary.LittleEndian.Uint32(vecBuf[k*4 : (k+1)*4])
+			b1 := binary.LittleEndian.Uint32(vecBuf[(k+1)*4 : (k+2)*4])
+			b2 := binary.LittleEndian.Uint32(vecBuf[(k+2)*4 : (k+3)*4])
+			b3 := binary.LittleEndian.Uint32(vecBuf[(k+3)*4 : (k+4)*4])
+
+			f0 := float64(math.Float32frombits(b0))
+			f1 := float64(math.Float32frombits(b1))
+			f2 := float64(math.Float32frombits(b2))
+			f3 := float64(math.Float32frombits(b3))
+
+			dot += float64(queryVec[k])*f0 + float64(queryVec[k+1])*f1 + float64(queryVec[k+2])*f2 + float64(queryVec[k+3])*f3
+			normB += f0*f0 + f1*f1 + f2*f2 + f3*f3
+		}
+		for ; k < int(dim); k++ {
+			b := binary.LittleEndian.Uint32(vecBuf[k*4 : (k+1)*4])
+			f := float64(math.Float32frombits(b))
+			dot += float64(queryVec[k]) * f
+			normB += f * f
+		}
+
+		sim := 0.0
+		if normB > 0 {
+			sim = dot / (normQuery * math.Sqrt(normB))
+		}
+
+		// Keep top-K candidates
+		if len(candidates) < topK {
+			candidates = append(candidates, streamCandidate{offset: chunkOffset, score: sim})
+			sort.Slice(candidates, func(a, b int) bool {
+				return candidates[a].score < candidates[b].score
+			})
+		} else if sim > candidates[0].score {
+			candidates[0] = streamCandidate{offset: chunkOffset, score: sim}
+			sort.Slice(candidates, func(a, b int) bool {
+				return candidates[a].score < candidates[b].score
+			})
+		}
+	}
+
+	// Sort candidates in descending order of score
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].score > candidates[j].score
+	})
+
+	// Now read ONLY the top-K chunks full data
+	results := make([]SearchResult, 0, len(candidates))
+	for _, cand := range candidates {
+		if cand.score <= 0.0 {
+			continue
+		}
+		chunk, err := readChunkAt(f, cand.offset)
+		if err != nil {
+			continue
+		}
+		results = append(results, SearchResult{
+			Chunk: chunk,
+			Score: cand.score,
+		})
+	}
+
+	return results, nil
+}
+
+// SearchOnDemandSemantic converts a natural language query into a dense vector,
+// streams the on-disk binary brain to extract top vector candidates, and applies
+// keyword re-ranking for ultra-precise hybrid search.
+func SearchOnDemandSemantic(filePath string, query string, topK int) ([]SearchResult, error) {
+	if strings.TrimSpace(query) == "" {
+		return nil, nil
+	}
+	embedder := GetEmbedder()
+	qVec := embedder.Embed(query)
+
+	candidatePool := topK * 2
+	if candidatePool < 10 {
+		candidatePool = 10
+	}
+
+	candidates, err := SearchOnDemand(filePath, qVec, candidatePool)
+	if err != nil {
+		return nil, err
+	}
+
+	terms := strings.Fields(strings.ToLower(query))
+	for i := range candidates {
+		chunk := &candidates[i].Chunk
+		contentLower := strings.ToLower(chunk.Title + " " + chunk.Content + " " + strings.Join(chunk.Tags, " "))
+		keywordBoost := 0.0
+		for _, term := range terms {
+			if strings.Contains(contentLower, term) {
+				keywordBoost += 0.15
+			}
+			for _, tag := range chunk.Tags {
+				if strings.Contains(strings.ToLower(tag), term) {
+					keywordBoost += 0.25
+				}
+			}
+		}
+
+		finalScore := (candidates[i].Score * 0.6) + (keywordBoost * 0.4)
+		if finalScore > 1.0 {
+			finalScore = 1.0
+		}
+		candidates[i].Score = finalScore
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].Score > candidates[j].Score
+	})
+
+	if topK > 0 && len(candidates) > topK {
+		candidates = candidates[:topK]
+	}
+	return candidates, nil
+}
+
+func readChunkAt(f *os.File, offset int64) (KnowledgeChunk, error) {
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return KnowledgeChunk{}, err
+	}
+	readString := func() (string, error) {
+		var length uint32
+		if err := binary.Read(f, binary.LittleEndian, &length); err != nil {
+			return "", err
+		}
+		buf := make([]byte, length)
+		if _, err := io.ReadFull(f, buf); err != nil {
+			return "", err
+		}
+		return string(buf), nil
+	}
+
+	id, err := readString()
+	if err != nil {
+		return KnowledgeChunk{}, err
+	}
+	title, _ := readString()
+	cat, _ := readString()
+	tagsJoined, _ := readString()
+	content, _ := readString()
+
+	tags := []string{}
+	if tagsJoined != "" {
+		tags = strings.Split(tagsJoined, ",")
+	}
+
+	return KnowledgeChunk{
+		ID:       id,
+		Title:    title,
+		Category: cat,
+		Tags:     tags,
+		Content:  content,
+	}, nil
+}
+

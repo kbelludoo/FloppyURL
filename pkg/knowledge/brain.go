@@ -143,6 +143,64 @@ func (b *Brain) SearchByVector(queryVec []float32, topK int) []SearchResult {
 	return results
 }
 
+// SearchSemantic converts any natural language query into a 384-dim dense vector
+// in pure Go, performs Cosine Similarity search and blends with keyword boost for hybrid retrieval.
+func (b *Brain) SearchSemantic(query string, topK int) []SearchResult {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	if len(b.chunks) == 0 || strings.TrimSpace(query) == "" {
+		return nil
+	}
+
+	embedder := GetEmbedder()
+	qVec := embedder.Embed(query)
+	terms := strings.Fields(strings.ToLower(query))
+
+	results := make([]SearchResult, 0, len(b.chunks))
+	for _, chunk := range b.chunks {
+		sim := 0.0
+		if len(chunk.Vector) == len(qVec) {
+			sim = CosineSimilarity(qVec, chunk.Vector)
+		}
+
+		// Hybrid keyword boost
+		contentLower := strings.ToLower(chunk.Title + " " + chunk.Content + " " + strings.Join(chunk.Tags, " "))
+		keywordBoost := 0.0
+		for _, term := range terms {
+			if strings.Contains(contentLower, term) {
+				keywordBoost += 0.15
+			}
+			for _, tag := range chunk.Tags {
+				if strings.Contains(strings.ToLower(tag), term) {
+					keywordBoost += 0.25
+				}
+			}
+		}
+
+		finalScore := (sim * 0.6) + (keywordBoost * 0.4)
+		if finalScore > 1.0 {
+			finalScore = 1.0
+		}
+
+		if finalScore > 0.05 {
+			results = append(results, SearchResult{
+				Chunk: chunk,
+				Score: finalScore,
+			})
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
+	if topK > 0 && len(results) > topK {
+		results = results[:topK]
+	}
+	return results
+}
+
 // SearchKeyword performs high-speed keyword + tag relevance matching when vector is not passed.
 func (b *Brain) SearchKeyword(query string, topK int) []SearchResult {
 	b.mu.RLock()

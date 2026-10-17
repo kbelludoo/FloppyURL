@@ -103,7 +103,21 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 		}
 	}
 
-	// 2. Fallback Groq (Llama-3.3 ultra-rápido, tier gratuito)
+	// 2. Apinex Gateway (Gemini 3.8 Flash, DeepSeek v4.1, GPT-6 Luna)
+	if apinexKey := os.Getenv("APINEX_API_KEY"); apinexKey != "" {
+		apinexModel := os.Getenv("APINEX_MODEL")
+		if apinexModel == "" {
+			apinexModel = "free/gemini-3.8-flash"
+		}
+		providers = append(providers, UpstreamProvider{
+			Name:    "apinex-gateway",
+			BaseURL: "https://api.apinex.bond/v1",
+			APIKey:  apinexKey,
+			Model:   apinexModel,
+		})
+	}
+
+	// 3. Fallback Groq (Llama-3.3 ultra-rápido, tier gratuito)
 	if groqKey := os.Getenv("GROQ_API_KEY"); groqKey != "" {
 		providers = append(providers, UpstreamProvider{
 			Name:    "groq-fast",

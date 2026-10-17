@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Xelckis/floppyURL/pkg/memory"
-	"github.com/Xelckis/floppyURL/pkg/skills"
+	"github.com/kbelludoo/FloppyURL/pkg/memory"
+	"github.com/kbelludoo/FloppyURL/pkg/skills"
 )
 
 const systemPromptTemplate = `You are a powerful server-side AI agent running inside FloppyURL — a lightweight Go web server.
@@ -21,6 +21,10 @@ Hostname: %s
 - core_memory_get    → read working memory blocks
 - memory_save        → persist learned solutions or incident resolutions into long-term Episodic Memory
 - memory_search      → search past solutions and procedures using native BM25 search
+- knowledge_search   → search the specialized Go bot knowledge brain (vector procedures for leaks, sockets, systemd, bot architectures)
+- code_verify_go     → execution-grounded sandbox: compiles, vets, and tests Go code in an isolated sandbox to eliminate bugs before applying
+- neural_evolve_step → executes a safe neuroevolution mutation cycle on local neural weights, with zero-regression Golden Test guarantees
+- dual_mind_deliberate → deliberates actions/code through the 4-persona Dual-Mind Council (Mutant Engineer, Skeptic Judge, Subconscious Guardian, Mediator) to obtain execution proof or survival veto
 - skills_list        → discover available modular skills
 - skill_activate     → load a skill on demand, unlocking specialized tools and playbooks
 - skill_deactivate   → deactivate a skill when no longer needed

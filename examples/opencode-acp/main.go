@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Xelckis/floppyURL/pkg/opencode"
+	"github.com/kbelludoo/FloppyURL/pkg/opencode"
 )
 
 func main() {

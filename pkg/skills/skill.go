@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Xelckis/floppyURL/pkg/watchdog"
+	"github.com/kbelludoo/FloppyURL/pkg/watchdog"
 )
 
 // SkillTool defines a tool provided by a skill.

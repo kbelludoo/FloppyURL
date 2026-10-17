@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Xelckis/floppyURL/lint"
+	"github.com/kbelludoo/FloppyURL/lint"
 )
 
 func TestHTMLToLayTranspile(t *testing.T) {

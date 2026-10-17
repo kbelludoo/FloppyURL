@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Xelckis/floppyURL/pkg/network"
-	"github.com/Xelckis/floppyURL/pkg/opencode"
+	"github.com/kbelludoo/FloppyURL/pkg/network"
+	"github.com/kbelludoo/FloppyURL/pkg/opencode"
 )
 
 // Router implements an OpenAI-compatible gateway with token compression and auto-fallback.

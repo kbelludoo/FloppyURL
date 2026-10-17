@@ -7,7 +7,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/Xelckis/floppyURL/linj"
+	"github.com/kbelludoo/FloppyURL/linj"
 )
 
 func main() {

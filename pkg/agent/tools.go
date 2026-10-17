@@ -9,14 +9,18 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/Xelckis/floppyURL/pkg/memory"
-	"github.com/Xelckis/floppyURL/pkg/scheduler"
-	"github.com/Xelckis/floppyURL/pkg/server"
-	"github.com/Xelckis/floppyURL/pkg/skills"
-	"github.com/Xelckis/floppyURL/pkg/subagent"
-	"github.com/Xelckis/floppyURL/pkg/watchdog"
+	"github.com/kbelludoo/FloppyURL/pkg/knowledge"
+	"github.com/kbelludoo/FloppyURL/pkg/memory"
+	"github.com/kbelludoo/FloppyURL/pkg/neural"
+	"github.com/kbelludoo/FloppyURL/pkg/scheduler"
+	"github.com/kbelludoo/FloppyURL/pkg/server"
+	"github.com/kbelludoo/FloppyURL/pkg/skills"
+	"github.com/kbelludoo/FloppyURL/pkg/subagent"
+	"github.com/kbelludoo/FloppyURL/pkg/verifier"
+	"github.com/kbelludoo/FloppyURL/pkg/watchdog"
 )
 
 // ToolDef defines a callable function for the LLM.
@@ -298,6 +302,88 @@ var AvailableTools = []ToolDef{
 	{
 		Type: "function",
 		Function: FunctionDef{
+			Name:        "knowledge_search",
+			Description: "Searches the specialized Go Bot Knowledge Brain (vector & semantic procedures for Go concurrency, memory leak prevention, systemd, bot architectures, and game automation).",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"query": {
+						"type": "string",
+						"description": "Question or technical problem to search in the Go bot knowledge base (e.g. 'websocket timeout', 'memory leak http transport', 'systemd restart', 'gogc')"
+					},
+					"top_k": {
+						"type": "integer",
+						"description": "Number of top results to return (default: 3)"
+					}
+				},
+				"required": ["query"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "code_verify_go",
+			Description: "Execution-grounded code verifier: Compiles and tests Go source code in an isolated sandbox with 'go vet', 'go build', and 'go test', returning exact compiler errors or execution output to eliminate probabilistic bugs.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"go_code": {
+						"type": "string",
+						"description": "The complete Go source code snippet to verify (e.g. package main...)"
+					},
+					"test_code": {
+						"type": "string",
+						"description": "Optional unit test code (package main... TestXxx...)"
+					}
+				},
+				"required": ["go_code"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "neural_evolve_step",
+			Description: "Executes a safe neuroevolution mutation cycle on the local neural network: clones champion, mutates weights, rigorously tests against the Golden Test Suite, and promotes the candidate ONLY if zero regressions occur.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "dual_mind_deliberate",
+			Description: "Submits an action, command, or code change to the 4-persona Dual-Mind Council (Mutant Engineer, Skeptic Judge, Subconscious Guardian, and Mediator), obtaining unanimous proof of execution or veto before any production change.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"type": {
+						"type": "string",
+						"description": "Action type: 'code_change', 'command', 'bot_restart', or 'optimization'"
+					},
+					"description": {
+						"type": "string",
+						"description": "Clear description of the proposed action"
+					},
+					"go_code": {
+						"type": "string",
+						"description": "Go source code if proposing a code change"
+					},
+					"command": {
+						"type": "string",
+						"description": "Shell command if proposing a command"
+					}
+				},
+				"required": ["type", "description"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
 			Name:        "skills_list",
 			Description: "Lists all available modular Hermes-style skills, their descriptions, provided tools, and active status.",
 			Parameters: json.RawMessage(`{
@@ -498,6 +584,37 @@ func GetEffectiveTools() []ToolDef {
 	return tools
 }
 
+var (
+	defaultEngine *neural.EvolutionEngine
+	evolutionOnce sync.Once
+)
+
+func getEvolutionEngine() *neural.EvolutionEngine {
+	evolutionOnce.Do(func() {
+		net, _ := neural.NewNetwork([]int{4, 8, 2}, []string{"relu", "sigmoid"})
+		suite := []neural.TestCase{
+			{
+				ID:         "bot_health_safety",
+				Name:       "Bot health prediction safety",
+				Inputs:     []float64{0.1, 0.2, 0.05, 0.9},
+				Expected:   []float64{0.95, 0.05},
+				IsCritical: true,
+				MaxLoss:    0.20,
+			},
+			{
+				ID:         "memory_pressure_invariant",
+				Name:       "High swap indicates danger",
+				Inputs:     []float64{0.9, 0.8, 0.8, 0.1},
+				Expected:   []float64{0.1, 0.9},
+				IsCritical: true,
+				MaxLoss:    0.25,
+			},
+		}
+		defaultEngine = neural.NewEvolutionEngine(net, suite, "")
+	})
+	return defaultEngine
+}
+
 // ExecuteTool runs the requested tool by name with JSON arguments.
 func ExecuteTool(ctx context.Context, name, arguments string) (string, error) {
 
@@ -577,6 +694,81 @@ func ExecuteTool(ctx context.Context, name, arguments string) (string, error) {
 			return "Nenhuma memória encontrada com esses termos de busca.", nil
 		}
 		data, _ := json.MarshalIndent(results, "", "  ")
+		return string(data), nil
+
+	case "knowledge_search":
+		var args struct {
+			Query string `json:"query"`
+			TopK  int    `json:"top_k"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for knowledge_search: %w", err)
+		}
+		if args.TopK <= 0 {
+			args.TopK = 3
+		}
+		brain := knowledge.GetBrain()
+		results := brain.SearchKeyword(args.Query, args.TopK)
+		if len(results) == 0 {
+			return "Nenhum procedimento encontrado no Cérebro de Conhecimento para essa consulta.", nil
+		}
+		data, _ := json.MarshalIndent(results, "", "  ")
+		return string(data), nil
+
+	case "code_verify_go":
+		var args struct {
+			GoCode   string `json:"go_code"`
+			TestCode string `json:"test_code"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for code_verify_go: %w", err)
+		}
+		res, err := verifier.VerifyGoCode(ctx, args.GoCode, args.TestCode)
+		if err != nil {
+			return fmt.Sprintf("Erro ao instanciar sandbox de execução: %v", err), nil
+		}
+		data, _ := json.MarshalIndent(res, "", "  ")
+		return string(data), nil
+
+	case "neural_evolve_step":
+		eng := getEvolutionEngine()
+		promoted, oldFit, newFit, reason := eng.Step()
+		status := eng.GetStatus()
+		data, _ := json.MarshalIndent(map[string]any{
+			"promoted":     promoted,
+			"old_fitness":  oldFit,
+			"new_fitness":  newFit,
+			"verdict":      reason,
+			"neural_state": status,
+		}, "", "  ")
+		return string(data), nil
+
+	case "dual_mind_deliberate":
+		var args struct {
+			Type        string `json:"type"`
+			Description string `json:"description"`
+			GoCode      string `json:"go_code"`
+			TestCode    string `json:"test_code"`
+			Command     string `json:"command"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for dual_mind_deliberate: %w", err)
+		}
+		proposal := neural.ActionProposal{
+			ID:          fmt.Sprintf("prop_%d", time.Now().UnixNano()),
+			Type:        args.Type,
+			Description: args.Description,
+			GoCode:      args.GoCode,
+			TestCode:    args.TestCode,
+			Command:     args.Command,
+			Timestamp:   time.Now(),
+		}
+		dm := neural.GetDualMind()
+		outcome, err := dm.Deliberate(ctx, proposal)
+		if err != nil {
+			return fmt.Sprintf("Erro no conselho da Mente Dual: %v", err), nil
+		}
+		data, _ := json.MarshalIndent(outcome, "", "  ")
 		return string(data), nil
 
 	case "skills_list":

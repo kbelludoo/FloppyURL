@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Xelckis/floppyURL/pkg/network"
+	"github.com/kbelludoo/FloppyURL/pkg/network"
 	"golang.org/x/net/proxy"
 )
 

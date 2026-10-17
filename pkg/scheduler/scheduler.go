@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Xelckis/floppyURL/pkg/watchdog"
+	"github.com/kbelludoo/FloppyURL/pkg/watchdog"
 )
 
 // ScheduledTask defines a pending or recurring scheduled intention.

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Xelckis/floppyURL/pkg/deepseek"
+	"github.com/kbelludoo/FloppyURL/pkg/deepseek"
 )
 
 // deepseek-web backend: an OpenAI-compatible front for chat.deepseek.com that

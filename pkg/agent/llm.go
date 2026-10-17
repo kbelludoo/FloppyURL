@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Xelckis/floppyURL/pkg/network"
-	"github.com/Xelckis/floppyURL/pkg/opencode"
+	"github.com/kbelludoo/FloppyURL/pkg/network"
+	"github.com/kbelludoo/FloppyURL/pkg/opencode"
 )
 
 var nvidiaHTTPClient = &http.Client{

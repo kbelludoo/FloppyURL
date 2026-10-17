@@ -65,7 +65,7 @@ func NewWithModel(model string) *Agent {
 // SetModel overrides the model used by the agent.
 func (a *Agent) SetModel(model string) {
 	if model != "" && a.client != nil {
-		a.client.Model = model
+		a.client.SetModel(model)
 	}
 }
 

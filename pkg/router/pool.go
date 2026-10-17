@@ -108,6 +108,10 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 			targetModel = "kilo-auto/free"
 		case "mistral", "codestral", "codestral-latest":
 			targetModel = "codestral-latest"
+		case "claude", "claude-sonnet", "claude-sonnet-5":
+			targetModel = "claude-sonnet-5"
+		case "claude-opus", "claude-opus-5.5":
+			targetModel = "claude-opus-5.5"
 		case "llama", "llama-3.3":
 			targetModel = "llama-3.3-70b-versatile"
 		}

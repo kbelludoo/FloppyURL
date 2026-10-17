@@ -35,6 +35,10 @@ func NewRouter() *Router {
 	mistralKey := os.Getenv("MISTRAL_API_KEY")
 	mistralBase := "https://api.mistral.ai/v1"
 
+	// 2.6 CodeCraft API (Claude, DeepSeek, GPT-5.6, Gemini)
+	codecraftKey := os.Getenv("CODECRAFT_API_KEY")
+	codecraftBase := "https://codecraftapi.com/v1"
+
 	// 3. Kilo Gateway (kilo-auto/free)
 	kiloKey := os.Getenv("KILO_API_KEY")
 	kiloBase := "https://api.kilo.ai/api/gateway"
@@ -105,6 +109,20 @@ func NewRouter() *Router {
 		})
 	}
 
+	if codecraftKey != "" {
+		ccModel := os.Getenv("CODECRAFT_MODEL")
+		if ccModel == "" {
+			ccModel = "claude-sonnet-5"
+		}
+		defaultChain = append(defaultChain, Provider{
+			Name:       "codecraft-primary",
+			BaseURL:    codecraftBase,
+			APIKey:     codecraftKey,
+			DefaultMod: ccModel,
+			Active:     true,
+		})
+	}
+
 	if kiloKey != "" {
 		defaultChain = append(defaultChain, Provider{
 			Name:       "kilo-gateway-free",
@@ -152,6 +170,11 @@ func NewRouter() *Router {
 	pool.RegisterRoute("mistral", defaultChain)
 	pool.RegisterRoute("codestral", defaultChain)
 	pool.RegisterRoute("codestral-latest", defaultChain)
+	pool.RegisterRoute("claude", defaultChain)
+	pool.RegisterRoute("claude-sonnet", defaultChain)
+	pool.RegisterRoute("claude-sonnet-5", defaultChain)
+	pool.RegisterRoute("claude-opus", defaultChain)
+	pool.RegisterRoute("claude-opus-5.5", defaultChain)
 	pool.RegisterRoute("llama", defaultChain)
 
 	// Direct bridge to the models configured in the local opencode install.

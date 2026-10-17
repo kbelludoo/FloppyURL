@@ -81,6 +81,8 @@ func (c *LLMClient) SetModel(model string) {
 			isMatch = true
 		} else if strings.Contains(mLower, "llama") && (strings.Contains(pLower, "groq") || strings.Contains(pLower, "openrouter")) {
 			isMatch = true
+		} else if strings.Contains(mLower, "claude") && (strings.Contains(pLower, "codecraft") || strings.Contains(strings.ToLower(p.Model), "claude")) {
+			isMatch = true
 		} else if strings.Contains(mLower, "kilo") && strings.Contains(pLower, "kilo") {
 			isMatch = true
 		} else if strings.EqualFold(p.Model, model) {
@@ -208,6 +210,20 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 			BaseURL: "https://api.mistral.ai/v1",
 			APIKey:  mistralKey,
 			Model:   mModel,
+		})
+	}
+
+	// 2.6 CodeCraft API (https://codecraftapi.com/v1 - Claude, DeepSeek, GPT-5.6, Gemini)
+	if ccKey := os.Getenv("CODECRAFT_API_KEY"); ccKey != "" {
+		ccModel := os.Getenv("CODECRAFT_MODEL")
+		if ccModel == "" {
+			ccModel = "claude-sonnet-5"
+		}
+		providers = append(providers, UpstreamProvider{
+			Name:    "codecraft-primary",
+			BaseURL: "https://codecraftapi.com/v1",
+			APIKey:  ccKey,
+			Model:   ccModel,
 		})
 	}
 

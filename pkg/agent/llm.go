@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -16,6 +17,18 @@ import (
 	"github.com/Xelckis/floppyURL/pkg/network"
 	"github.com/Xelckis/floppyURL/pkg/opencode"
 )
+
+var nvidiaHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		ForceAttemptHTTP2:   true,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableKeepAlives:   false,
+	},
+	Timeout: 60 * time.Second,
+}
 
 type Message struct {
 	Role       string     `json:"role"`
@@ -61,9 +74,16 @@ type LLMClient struct {
 	Providers  []UpstreamProvider
 	HTTPClient *http.Client
 	Daemon     *opencode.DaemonClient
+	ACP        *opencode.ACPClient
+	acpError   error
+	acpModel   string
 }
 
 func (c *LLMClient) SetModel(model string) {
+	if c.ACP != nil && model != "" {
+		c.acpModel = model
+		return
+	}
 	if model == "" || len(c.Providers) == 0 {
 		return
 	}
@@ -82,7 +102,9 @@ func (c *LLMClient) SetModel(model string) {
 			isMatch = true
 		} else if strings.Contains(mLower, "luna") && (strings.Contains(pLower, "luna") || strings.Contains(strings.ToLower(p.Model), "luna")) {
 			isMatch = true
-		} else if strings.Contains(mLower, "llama") && (strings.Contains(pLower, "groq") || strings.Contains(pLower, "openrouter")) {
+		} else if strings.Contains(mLower, "llama") && (strings.Contains(pLower, "groq") || strings.Contains(pLower, "openrouter") || strings.Contains(pLower, "nvidia")) {
+			isMatch = true
+		} else if (strings.Contains(mLower, "nvidia") || strings.Contains(mLower, "nemotron")) && strings.Contains(pLower, "nvidia") {
 			isMatch = true
 		} else if strings.Contains(mLower, "claude") && (strings.Contains(pLower, "codecraft") || strings.Contains(strings.ToLower(p.Model), "claude")) {
 			isMatch = true
@@ -105,6 +127,12 @@ func (c *LLMClient) SetModel(model string) {
 }
 
 func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
+	// ACP owns the complete agent turn, including provider auth and tools.
+	// Do not initialize direct providers or account rotation in this mode.
+	acp, acpErr := opencode.NewACPFromEnv()
+	if acp != nil || acpErr != nil {
+		return &LLMClient{ACP: acp, acpError: acpErr, acpModel: model}
+	}
 	var providers []UpstreamProvider
 
 	// 0. opencode providers (same models/auth as the opencode CLI, called
@@ -276,6 +304,34 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 		})
 	}
 
+	// 2.7 NVIDIA Build / NIM API (Com transporte HTTP/2, pooling persistente e auto-retry)
+	if nvKey := os.Getenv("NVIDIA_API_KEY"); nvKey != "" {
+		nvModel := os.Getenv("NVIDIA_MODEL")
+		if nvModel == "" {
+			nvModel = "meta/llama-3.2-11b-vision-instruct"
+		}
+		providers = append(providers, UpstreamProvider{
+			Name:     "nvidia-build-primary",
+			BaseURL:  "https://integrate.api.nvidia.com/v1",
+			APIKey:   nvKey,
+			Model:    nvModel,
+			NoRotate: true,
+		})
+		nvFallback := os.Getenv("NVIDIA_FALLBACK_MODEL")
+		if nvFallback == "" {
+			nvFallback = "openai/gpt-oss-20b"
+		}
+		if nvFallback != nvModel {
+			providers = append(providers, UpstreamProvider{
+				Name:     "nvidia-build-fallback",
+				BaseURL:  "https://integrate.api.nvidia.com/v1",
+				APIKey:   nvKey,
+				Model:    nvFallback,
+				NoRotate: true,
+			})
+		}
+	}
+
 	// 3. Fallback Kilo Gateway (Modelo 100% Free: kilo-auto/free)
 	if kiloKey := os.Getenv("KILO_API_KEY"); kiloKey != "" {
 		providers = append(providers, UpstreamProvider{
@@ -306,13 +362,14 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 		})
 	}
 
-	// 6. Provedor customizado explícito (se informado e não for NVIDIA NIM expirado)
-	if apiKey != "" && !strings.Contains(baseURL, "integrate.api.nvidia.com") {
+	// 6. Provedor customizado explícito (se informado)
+	if apiKey != "" {
 		providers = append([]UpstreamProvider{{
-			Name:    "custom-override",
-			BaseURL: baseURL,
-			APIKey:  apiKey,
-			Model:   model,
+			Name:     "custom-override",
+			BaseURL:  baseURL,
+			APIKey:   apiKey,
+			Model:    model,
+			NoRotate: strings.Contains(baseURL, "integrate.api.nvidia.com"),
 		}}, providers...)
 	}
 
@@ -328,6 +385,20 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 }
 
 func (c *LLMClient) Complete(ctx context.Context, messages []Message, tools []ToolDef) (*Message, string, error) {
+	if c.acpError != nil {
+		return nil, "", c.acpError
+	}
+	if c.ACP != nil {
+		sdkTools, err := acpTools(tools)
+		if err != nil {
+			return nil, "", err
+		}
+		result, err := c.ACP.Complete(ctx, c.acpModel, messages, sdkTools...)
+		if err != nil {
+			return nil, "", err
+		}
+		return &Message{Role: "assistant", Content: result.AssistantText}, "stop", nil
+	}
 	// 0. Primary: OpenCode Local Headless Daemon (rotacionando todas as contas conectadas)
 	if c.Daemon != nil && c.Daemon.IsAvailable() {
 		var userPrompt string
@@ -398,27 +469,20 @@ func (c *LLMClient) completeWithProvider(ctx context.Context, prov UpstreamProvi
 	}
 	url += "chat/completions"
 
-	// Timeout de até 35s por provedor individual para chavear rápido no fallback
-	provCtx, provCancel := context.WithTimeout(ctx, 35*time.Second)
+	isNvidia := strings.Contains(prov.BaseURL, "integrate.api.nvidia.com")
+	timeout := 35 * time.Second
+	if isNvidia {
+		timeout = 90 * time.Second
+	}
+
+	// Timeout individual para chavear rápido no fallback
+	provCtx, provCancel := context.WithTimeout(ctx, timeout)
 	defer provCancel()
 
-	httpReq, err := http.NewRequestWithContext(provCtx, "POST", url, bytes.NewReader(jsonBytes))
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to create http request: %w", err)
-	}
-
-	for k, v := range prov.Headers {
-		httpReq.Header.Set(k, v)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	if prov.APIKey != "" && httpReq.Header.Get("Authorization") == "" && httpReq.Header.Get("X-Api-Key") == "" {
-		httpReq.Header.Set("Authorization", "Bearer "+prov.APIKey)
-	}
-	httpReq.Header.Set("HTTP-Referer", "https://github.com/kbelludoo/FloppyURL")
-	httpReq.Header.Set("X-Title", "Agent Go")
-
 	httpClient := c.HTTPClient
-	if prov.LocalIP != nil {
+	if isNvidia {
+		httpClient = nvidiaHTTPClient
+	} else if prov.LocalIP != nil {
 		httpClient = &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -437,15 +501,62 @@ func (c *LLMClient) completeWithProvider(ctx context.Context, prov UpstreamProvi
 		httpClient = &http.Client{}
 	}
 
-	resp, err := httpClient.Do(httpReq)
-	if err != nil {
-		return nil, "", fmt.Errorf("http request failed: %w", err)
+	maxAttempts := 1
+	if isNvidia {
+		maxAttempts = 3
 	}
-	defer resp.Body.Close()
 
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, "", fmt.Errorf("failed to read response body: %w", err)
+	var resp *http.Response
+	var bodyBytes []byte
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(1<<attempt)*time.Second + time.Duration(rand.Intn(1000))*time.Millisecond
+			log.Printf("[llm-retry] 🔄 Provedor %s (%s) instável. Aguardando %v antes da tentativa %d/%d...", prov.Name, prov.Model, backoff, attempt+1, maxAttempts)
+			select {
+			case <-time.After(backoff):
+			case <-provCtx.Done():
+				return nil, "", provCtx.Err()
+			}
+		}
+
+		httpReq, err := http.NewRequestWithContext(provCtx, "POST", url, bytes.NewReader(jsonBytes))
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to create http request: %w", err)
+		}
+
+		for k, v := range prov.Headers {
+			httpReq.Header.Set(k, v)
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		if prov.APIKey != "" && httpReq.Header.Get("Authorization") == "" && httpReq.Header.Get("X-Api-Key") == "" {
+			httpReq.Header.Set("Authorization", "Bearer "+prov.APIKey)
+		}
+		httpReq.Header.Set("HTTP-Referer", "https://github.com/kbelludoo/FloppyURL")
+		httpReq.Header.Set("X-Title", "Agent Go")
+
+		resp, err = httpClient.Do(httpReq)
+		if err != nil {
+			if isNvidia && attempt < maxAttempts-1 {
+				continue
+			}
+			return nil, "", fmt.Errorf("http request failed: %w", err)
+		}
+
+		bodyBytes, err = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			if isNvidia && attempt < maxAttempts-1 {
+				continue
+			}
+			return nil, "", fmt.Errorf("failed to read response body: %w", err)
+		}
+
+		if (resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500) && isNvidia && attempt < maxAttempts-1 {
+			continue
+		}
+
+		break
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

@@ -11,7 +11,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Xelckis/floppyURL/pkg/memory"
 	"github.com/Xelckis/floppyURL/pkg/server"
+	"github.com/Xelckis/floppyURL/pkg/skills"
+	"github.com/Xelckis/floppyURL/pkg/watchdog"
 )
 
 // ToolDef defines a callable function for the LLM.
@@ -153,12 +156,344 @@ var AvailableTools = []ToolDef{
 			}`),
 		},
 	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "vps_bots_status",
+			Description: "Returns real-time status of all 9 gaming and automation bots on this VPS (huntera, tibidle, sigma, leveling, pokeidle, pokeidleworld, kickminer, twitchminer, baiak), showing online/offline status, ports, latency, and RAM.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "vps_bot_restart",
+			Description: "Safely restarts a specific bot service on the VPS by ID ('huntera', 'tibidle', 'sigma', 'leveling', 'pokeidle', 'pokeidleworld', 'kickminer', 'twitchminer', 'baiak') and verifies if it came back online.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"bot_id": {
+						"type": "string",
+						"description": "The ID of the bot to restart (e.g. 'sigma', 'baiak', 'huntera')"
+					}
+				},
+				"required": ["bot_id"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "vps_bot_logs",
+			Description: "Returns recent journalctl or process logs for a specific bot by ID to diagnose errors or crashes.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"bot_id": {
+						"type": "string",
+						"description": "The ID of the bot to inspect logs for (e.g. 'sigma', 'baiak', 'huntera')"
+					},
+					"lines": {
+						"type": "integer",
+						"description": "Number of log lines to retrieve (default: 30)"
+					}
+				},
+				"required": ["bot_id"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "core_memory_update",
+			Description: "Updates or appends knowledge in Core Working Memory (persistent prompt scratchpad: 'user', 'vps', 'notes', etc.).",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"block": {
+						"type": "string",
+						"description": "The memory block name (e.g. 'user', 'vps', 'notes', 'custom')"
+					},
+					"content": {
+						"type": "string",
+						"description": "Text content to save or update"
+					},
+					"append": {
+						"type": "boolean",
+						"description": "If true, appends to the existing block instead of overwriting"
+					}
+				},
+				"required": ["block", "content"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "core_memory_get",
+			Description: "Retrieves all blocks or a specific block from Core Working Memory.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"block": {
+						"type": "string",
+						"description": "Optional block name to retrieve. If empty, returns all blocks."
+					}
+				}
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "memory_save",
+			Description: "Saves a learned solution, incident resolution, or fact to long-term Episodic Memory.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"title": {
+						"type": "string",
+						"description": "Concise title for the memory entry"
+					},
+					"content": {
+						"type": "string",
+						"description": "Detailed explanation of the solution, fact, or procedure"
+					},
+					"tags": {
+						"type": "array",
+						"items": {"type": "string"},
+						"description": "Keywords or tags for fast retrieval (e.g. ['pokeidle', 'port3006', 'systemd'])"
+					}
+				},
+				"required": ["title", "content"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "memory_search",
+			Description: "Searches past knowledge, incident resolutions, and learned facts via pure Go BM25 relevance matching.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"query": {
+						"type": "string",
+						"description": "Search terms or question to match against past memories"
+					},
+					"limit": {
+						"type": "integer",
+						"description": "Maximum number of results to return (default: 5)"
+					}
+				},
+				"required": ["query"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "skills_list",
+			Description: "Lists all available modular Hermes-style skills, their descriptions, provided tools, and active status.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "skill_activate",
+			Description: "Activates a skill modularly (e.g. 'vps-guardian', 'browser-pilot'), dynamically granting specialized playbook instructions and tools.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"skill_id": {
+						"type": "string",
+						"description": "The ID of the skill to activate (e.g. 'vps-guardian', 'browser-pilot')"
+					}
+				},
+				"required": ["skill_id"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "skill_deactivate",
+			Description: "Deactivates a skill to keep the tool context minimal and focused.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"skill_id": {
+						"type": "string",
+						"description": "The ID of the skill to deactivate"
+					}
+				},
+				"required": ["skill_id"]
+			}`),
+		},
+	},
+}
+
+// GetEffectiveTools returns the active set of tools: static core tools + tools from active skills.
+func GetEffectiveTools() []ToolDef {
+	tools := make([]ToolDef, len(AvailableTools))
+	copy(tools, AvailableTools)
+
+	reg := skills.GetRegistry()
+	for _, def := range reg.GetActiveToolDefs() {
+		fn, ok := def["function"].(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := fn["name"].(string)
+		desc, _ := fn["description"].(string)
+		var paramBytes []byte
+		if p, ok := fn["parameters"].(json.RawMessage); ok {
+			paramBytes = p
+		} else {
+			paramBytes, _ = json.Marshal(fn["parameters"])
+		}
+
+		// Avoid duplicates
+		exists := false
+		for _, t := range tools {
+			if t.Function.Name == name {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			tools = append(tools, ToolDef{
+				Type: "function",
+				Function: FunctionDef{
+					Name:        name,
+					Description: desc,
+					Parameters:  paramBytes,
+				},
+			})
+		}
+	}
+	return tools
 }
 
 // ExecuteTool runs the requested tool by name with JSON arguments.
 func ExecuteTool(ctx context.Context, name, arguments string) (string, error) {
 
+	// 1. Check if tool is handled by an active modular skill
+	if res, handled, err := skills.GetRegistry().ExecuteActiveTool(ctx, name, arguments); handled {
+		return res, err
+	}
+
 	switch name {
+	case "core_memory_update":
+		var args struct {
+			Block   string `json:"block"`
+			Content string `json:"content"`
+			Append  bool   `json:"append"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for core_memory_update: %w", err)
+		}
+		cm := memory.GetCoreMemory()
+		var err error
+		if args.Append {
+			err = cm.Append(args.Block, args.Content)
+		} else {
+			err = cm.Set(args.Block, args.Content)
+		}
+		if err != nil {
+			return fmt.Sprintf("Erro ao atualizar Core Memory: %v", err), nil
+		}
+		return fmt.Sprintf("Bloco de memória [%s] atualizado com sucesso no Core Memory.", args.Block), nil
+
+	case "core_memory_get":
+		var args struct {
+			Block string `json:"block"`
+		}
+		_ = json.Unmarshal([]byte(arguments), &args)
+		cm := memory.GetCoreMemory()
+		if args.Block != "" {
+			val := cm.Get(args.Block)
+			if val == "" {
+				return fmt.Sprintf("Bloco [%s] não encontrado no Core Memory.", args.Block), nil
+			}
+			return fmt.Sprintf("[%s]: %s", args.Block, val), nil
+		}
+		data, _ := json.MarshalIndent(cm.ListBlocks(), "", "  ")
+		return string(data), nil
+
+	case "memory_save":
+		var args struct {
+			Title   string   `json:"title"`
+			Content string   `json:"content"`
+			Tags    []string `json:"tags"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for memory_save: %w", err)
+		}
+		em := memory.GetEpisodicMemory()
+		rec, err := em.Save(args.Title, args.Content, args.Tags)
+		if err != nil {
+			return fmt.Sprintf("Erro ao salvar memória episódica: %v", err), nil
+		}
+		return fmt.Sprintf("Memória persistida com sucesso (ID: %s, Título: %q).", rec.ID, rec.Title), nil
+
+	case "memory_search":
+		var args struct {
+			Query string `json:"query"`
+			Limit int    `json:"limit"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for memory_search: %w", err)
+		}
+		if args.Limit <= 0 {
+			args.Limit = 5
+		}
+		em := memory.GetEpisodicMemory()
+		results := em.Search(args.Query, args.Limit)
+		if len(results) == 0 {
+			return "Nenhuma memória encontrada com esses termos de busca.", nil
+		}
+		data, _ := json.MarshalIndent(results, "", "  ")
+		return string(data), nil
+
+	case "skills_list":
+		reg := skills.GetRegistry()
+		list := reg.List()
+		data, _ := json.MarshalIndent(list, "", "  ")
+		return string(data), nil
+
+	case "skill_activate":
+		var args struct {
+			SkillID string `json:"skill_id"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for skill_activate: %w", err)
+		}
+		reg := skills.GetRegistry()
+		s, err := reg.Activate(args.SkillID)
+		if err != nil {
+			return fmt.Sprintf("Falha ao ativar skill: %v", err), nil
+		}
+		return fmt.Sprintf("Skill '%s' (%s) ativada com sucesso! Instruções e ferramentas especializadas agora estão disponíveis.", s.Name, s.ID), nil
+
+	case "skill_deactivate":
+		var args struct {
+			SkillID string `json:"skill_id"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for skill_deactivate: %w", err)
+		}
+		reg := skills.GetRegistry()
+		reg.Deactivate(args.SkillID)
+		return fmt.Sprintf("Skill '%s' desativada.", args.SkillID), nil
+
 	case "bash_exec":
 		var args struct {
 			Command string `json:"command"`
@@ -236,6 +571,40 @@ func ExecuteTool(ctx context.Context, name, arguments string) (string, error) {
 5. microsoft/phi-3-mini-128k-instruct (Phi-3 Mini - leve com contexto longo)
 
 Para trocar, envie o campo "model" na requisição JSON para /agent ou acesse /v1/chat/completions`, nil
+
+	case "vps_bots_status":
+		report := watchdog.GetFleetStatus()
+		data, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			return fmt.Sprintf("Error serializing fleet status: %v", err), nil
+		}
+		return string(data), nil
+
+	case "vps_bot_restart":
+		var args struct {
+			BotID string `json:"bot_id"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for vps_bot_restart: %w", err)
+		}
+		ok, msg := watchdog.RestartBot(args.BotID)
+		if !ok {
+			return fmt.Sprintf("Falha: %s", msg), nil
+		}
+		return msg, nil
+
+	case "vps_bot_logs":
+		var args struct {
+			BotID string `json:"bot_id"`
+			Lines int    `json:"lines"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for vps_bot_logs: %w", err)
+		}
+		if args.Lines <= 0 {
+			args.Lines = 30
+		}
+		return watchdog.GetBotLogs(args.BotID, args.Lines), nil
 
 	default:
 		return "", fmt.Errorf("unknown tool: %s", name)

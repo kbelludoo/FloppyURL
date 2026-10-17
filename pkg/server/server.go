@@ -20,6 +20,7 @@ import (
 
 	"github.com/tdewolff/minify/v2"
 	minifyHtml "github.com/tdewolff/minify/v2/html"
+	"github.com/Xelckis/floppyURL/pkg/watchdog"
 )
 
 
@@ -319,6 +320,23 @@ func NewHandler(webDir string, agentH http.Handler, routerH http.Handler) http.H
 	mux.HandleFunc("/health", HealthHandler)
 	mux.HandleFunc("/search", SearchHandler)
 	mux.HandleFunc("/pack", PackHandler)
+	mux.HandleFunc("/api/vps/bots", func(w http.ResponseWriter, r *http.Request) {
+		EnableCORS(w)
+		w.Header().Set("Content-Type", "application/json")
+		report := watchdog.GetFleetStatus()
+		_ = json.NewEncoder(w).Encode(report)
+	})
+	mux.HandleFunc("/api/vps/restart", func(w http.ResponseWriter, r *http.Request) {
+		EnableCORS(w)
+		w.Header().Set("Content-Type", "application/json")
+		botID := r.URL.Query().Get("bot")
+		if botID == "" {
+			http.Error(w, `{"error":"parâmetro 'bot' obrigatório (ex: ?bot=sigma)"}`, http.StatusBadRequest)
+			return
+		}
+		ok, msg := watchdog.RestartBot(botID)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "message": msg})
+	})
 
 	if agentH != nil {
 		mux.Handle("/agent", agentH)

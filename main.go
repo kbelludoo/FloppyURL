@@ -22,6 +22,8 @@ import (
 	"github.com/Xelckis/floppyURL/pkg/opencode"
 	"github.com/Xelckis/floppyURL/pkg/router"
 	"github.com/Xelckis/floppyURL/pkg/server"
+	"github.com/Xelckis/floppyURL/pkg/watchdog"
+	"time"
 	"github.com/andybalholm/brotli"
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/css"
@@ -333,6 +335,7 @@ func main() {
 	webDir := flag.String("web-dir", "Website", "Diretorio contendo os arquivos web estaticos")
 	enableAgent := flag.Bool("agent", false, "Habilitar endpoint /agent (requer LLM_API_KEY no ambiente)")
 	enableRouter := flag.Bool("router", false, "Habilitar OpenAI API Gateway /v1/chat/completions com RTK e auto-fallback")
+	enableWatchdog := flag.Bool("watchdog", true, "Habilitar watchdog autonomo para vigiar e auto-curar bots da VPS (default: true)")
 	deepseekLogin := flag.Bool("deepseek-login", false, "Captura a sessao do DeepSeek Web (gratis, sem API key) de um Chrome com --remote-debugging-port=9222")
 	deepseekChat := flag.Bool("deepseek-chat", false, "Inicia chat interativo no terminal via DeepSeek Web (gratis, sem API key)")
 	deepseekCDP := flag.String("deepseek-cdp", "", "Endpoint CDP do Chrome (ex: http://127.0.0.1:9222). Padrao: DEEPSEEK_CDP_URL ou http://127.0.0.1:9222")
@@ -392,6 +395,16 @@ func main() {
 		if *enableRouter {
 			r := router.NewRouter()
 			routerH = r.Handler()
+		}
+		if *enableWatchdog {
+			watchdog.StartBackgroundWatchdog(context.Background(), 45*time.Second, func(ctx context.Context, bot watchdog.MonitoredBot, logs string) string {
+				prompt := fmt.Sprintf("O bot %s na porta %d caiu e o comando de reinicio rapido (%s) falhou. Analise os ultimos logs e forneca um diagnostico conciso de 2 a 3 frases explicando por que ele nao subiu e a correcao necessaria:\n\nLogs:\n%s", bot.Name, bot.Port, bot.RestartCmd, logs)
+				res, err := agent.NewStateless().Run(ctx, prompt)
+				if err != nil {
+					return fmt.Sprintf("Erro ao acionar IA do Agent Go: %v", err)
+				}
+				return res
+			})
 		}
 		if err := server.Start(*servePort, *webDir, agentH, routerH); err != nil {
 			log.Fatalf("Falha no servidor web: %v\n", err)

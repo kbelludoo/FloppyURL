@@ -1,13 +1,17 @@
 package skills
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Xelckis/floppyURL/pkg/watchdog"
 )
@@ -251,8 +255,72 @@ func (r *SkillRegistry) registerBuiltins() {
 		Description: "Navegação na web e extração de Markdown/links utilizando o motor ultra-leve Go AIGoBrowser (<20MB RAM).",
 		Prompt: `Você possui acesso ao AIGoBrowser ultra-leve em Go puro para navegar na web, extrair conteúdo estruturado em Markdown e links limpos.
 Use 'browser_navigate' sempre que precisar inspecionar sites, ler documentações ou consultar páginas externas.`,
-		Tools: []SkillTool{},
+		Tools: []SkillTool{
+			{
+				Name:        "browser_navigate",
+				Description: "Navega para qualquer página web utilizando o motor ultra-leve Go AIGoBrowser (<20MB RAM) e retorna Markdown estruturado e links.",
+				Parameters:  json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","description":"A URL de destino a visitar (ex: https://news.ycombinator.com)"},"render_js":{"type":"boolean","description":"Se verdadeiro, renderiza via worker JS"}},"required":["url"]}`),
+				Execute: func(ctx context.Context, args string) (string, error) {
+					var p struct {
+						URL      string `json:"url"`
+						RenderJS bool   `json:"render_js"`
+					}
+					if err := json.Unmarshal([]byte(args), &p); err != nil {
+						return "", err
+					}
+
+					bin := "aigobrowser"
+					if runtime.GOOS == "windows" {
+						if _, err := os.Stat("aigobrowser.exe"); err == nil {
+							bin = ".\\aigobrowser.exe"
+						} else if _, err := os.Stat("bin\\aigobrowser.exe"); err == nil {
+							bin = ".\\bin\\aigobrowser.exe"
+						} else if _, err := os.Stat("C:\\Users\\kbell\\Downloads\\ai-go-browser-colecao-completa\\current-project\\ai-go-browser-action-resolver\\bin\\aigobrowser.exe"); err == nil {
+							bin = "C:\\Users\\kbell\\Downloads\\ai-go-browser-colecao-completa\\current-project\\ai-go-browser-action-resolver\\bin\\aigobrowser.exe"
+						}
+					} else {
+						if _, err := os.Stat("/usr/local/bin/aigobrowser"); err == nil {
+							bin = "/usr/local/bin/aigobrowser"
+						} else if _, err := os.Stat("/home/ubuntu/ai-go-browser/bin/aigobrowser"); err == nil {
+							bin = "/home/ubuntu/ai-go-browser/bin/aigobrowser"
+						}
+					}
+
+					cmdArgs := fmt.Sprintf("%s -format markdown ", bin)
+					if p.RenderJS {
+						cmdArgs = fmt.Sprintf("%s -render-js -format markdown ", bin)
+					}
+					cmdArgs += fmt.Sprintf("%q", p.URL)
+
+					tctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+					defer cancel()
+
+					var cmd *exec.Cmd
+					if runtime.GOOS == "windows" {
+						cmd = exec.CommandContext(tctx, "powershell", "-NoProfile", "-Command", cmdArgs)
+					} else {
+						cmd = exec.CommandContext(tctx, "bash", "-c", cmdArgs)
+					}
+
+					var stdout, stderr bytes.Buffer
+					cmd.Stdout = &stdout
+					cmd.Stderr = &stderr
+					err := cmd.Run()
+					output := stdout.String()
+					if stderr.Len() > 0 {
+						output += "\nSTDERR:\n" + stderr.String()
+					}
+					if err != nil {
+						output += fmt.Sprintf("\nCommand exit error: %v", err)
+					}
+					return strings.TrimSpace(output), nil
+				},
+			},
+		},
 	})
+
+	// Both core skills active by default
+	r.active["browser-pilot"] = true
 }
 
 // loadSkillsFromDisk loads any custom SKILL.md files from ./skills or ~/.agent-go/skills

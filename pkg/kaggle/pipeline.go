@@ -1,6 +1,7 @@
 package kaggle
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -56,6 +57,7 @@ func (p *PipelineOrchestrator) TriggerTraining(ctx context.Context, enableGpu bo
 	if err != nil {
 		return fmt.Errorf("read notebook: %w", err)
 	}
+	nbData = bytes.TrimPrefix(nbData, []byte("\xef\xbb\xbf"))
 
 	pushResp, err := p.client.PushKernel(ctx, PushRequest{
 		Slug:           fmt.Sprintf("%s/%s", p.user, p.slug),

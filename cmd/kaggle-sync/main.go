@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"flag"
 	"fmt"
@@ -34,6 +35,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to read notebook: %v", err)
 		}
+		nbData = bytes.TrimPrefix(nbData, []byte("\xef\xbb\xbf"))
 
 		resp, err := client.PushKernel(ctx, kaggle.PushRequest{
 			Slug:           fmt.Sprintf("%s/%s", *user, *slug),

@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/Xelckis/floppyURL/pkg/memory"
+	"github.com/Xelckis/floppyURL/pkg/scheduler"
 	"github.com/Xelckis/floppyURL/pkg/server"
 	"github.com/Xelckis/floppyURL/pkg/skills"
+	"github.com/Xelckis/floppyURL/pkg/subagent"
 	"github.com/Xelckis/floppyURL/pkg/watchdog"
 )
 
@@ -338,6 +340,120 @@ var AvailableTools = []ToolDef{
 			}`),
 		},
 	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "skill_create",
+			Description: "Creates and saves a brand new persistent skill (SKILL.md) authored by the AI, immediately activating it.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"skill_id": {
+						"type": "string",
+						"description": "Unique identifier (lowercase with hyphens, e.g. 'baiak-tuner', 'git-sync')"
+					},
+					"name": {
+						"type": "string",
+						"description": "Display name of the skill"
+					},
+					"description": {
+						"type": "string",
+						"description": "Short description of what the skill does"
+					},
+					"instructions": {
+						"type": "string",
+						"description": "Detailed guidelines, rules, or playbooks injected into the prompt when active"
+					}
+				},
+				"required": ["skill_id", "name", "description", "instructions"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "schedule_reminder",
+			Description: "Schedules a one-shot reminder or task to be executed after a duration in seconds, notifying Telegram.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"duration_seconds": {
+						"type": "integer",
+						"description": "Number of seconds from now to execute the task"
+					},
+					"prompt": {
+						"type": "string",
+						"description": "The task prompt or reminder message to execute and deliver"
+					}
+				},
+				"required": ["duration_seconds", "prompt"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "schedule_list",
+			Description: "Lists all currently pending and active scheduled tasks and reminders.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "schedule_cancel",
+			Description: "Cancels a scheduled task or reminder by ID.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"task_id": {
+						"type": "string",
+						"description": "The ID of the task to cancel"
+					}
+				},
+				"required": ["task_id"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "subagent_spawn",
+			Description: "Spawns a detached background subagent in an independent Go goroutine for long-running analyses, delivering results to Telegram when done.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {
+					"role": {
+						"type": "string",
+						"description": "Role or title of the subagent (e.g. 'Log Investigator', 'Security Auditor')"
+					},
+					"prompt": {
+						"type": "string",
+						"description": "The task prompt or instruction for the subagent to execute"
+					},
+					"notify_telegram": {
+						"type": "boolean",
+						"description": "Whether to send the completion report to Telegram (default: true)"
+					}
+				},
+				"required": ["role", "prompt"]
+			}`),
+		},
+	},
+	{
+		Type: "function",
+		Function: FunctionDef{
+			Name:        "subagent_list",
+			Description: "Lists running, completed, and recent subagent background executions.",
+			Parameters: json.RawMessage(`{
+				"type": "object",
+				"properties": {}
+			}`),
+		},
+	},
 }
 
 // GetEffectiveTools returns the active set of tools: static core tools + tools from active skills.
@@ -493,6 +609,89 @@ func ExecuteTool(ctx context.Context, name, arguments string) (string, error) {
 		reg := skills.GetRegistry()
 		reg.Deactivate(args.SkillID)
 		return fmt.Sprintf("Skill '%s' desativada.", args.SkillID), nil
+
+	case "skill_create":
+		var args struct {
+			SkillID      string `json:"skill_id"`
+			Name         string `json:"name"`
+			Description  string `json:"description"`
+			Instructions string `json:"instructions"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for skill_create: %w", err)
+		}
+		reg := skills.GetRegistry()
+		s, err := reg.CreateSkill(args.SkillID, args.Name, args.Description, args.Instructions)
+		if err != nil {
+			return fmt.Sprintf("Erro ao criar skill: %v", err), nil
+		}
+		return fmt.Sprintf("Skill '%s' (%s) criada e ativada com sucesso! Arquivo SKILL.md salvo e pronto para uso.", s.Name, s.ID), nil
+
+	case "schedule_reminder":
+		var args struct {
+			DurationSeconds int    `json:"duration_seconds"`
+			Prompt          string `json:"prompt"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for schedule_reminder: %w", err)
+		}
+		if args.DurationSeconds <= 0 {
+			args.DurationSeconds = 60
+		}
+		mgr := scheduler.GetManager()
+		task := mgr.ScheduleReminder(time.Duration(args.DurationSeconds)*time.Second, args.Prompt, "")
+		return fmt.Sprintf("Lembrete agendado com sucesso (ID: %s)! Executará em %d segundos e notificará o Telegram.", task.ID, args.DurationSeconds), nil
+
+	case "schedule_list":
+		mgr := scheduler.GetManager()
+		list := mgr.List()
+		if len(list) == 0 {
+			return "Nenhuma tarefa agendada no momento.", nil
+		}
+		data, _ := json.MarshalIndent(list, "", "  ")
+		return string(data), nil
+
+	case "schedule_cancel":
+		var args struct {
+			TaskID string `json:"task_id"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for schedule_cancel: %w", err)
+		}
+		mgr := scheduler.GetManager()
+		if mgr.Cancel(args.TaskID) {
+			return fmt.Sprintf("Tarefa agendada '%s' cancelada com sucesso.", args.TaskID), nil
+		}
+		return fmt.Sprintf("Tarefa agendada '%s' não encontrada ou já expirada.", args.TaskID), nil
+
+	case "subagent_spawn":
+		var args struct {
+			Role           string `json:"role"`
+			Prompt         string `json:"prompt"`
+			NotifyTelegram *bool  `json:"notify_telegram"`
+		}
+		if err := json.Unmarshal([]byte(arguments), &args); err != nil {
+			return "", fmt.Errorf("invalid arguments for subagent_spawn: %w", err)
+		}
+		notify := true
+		if args.NotifyTelegram != nil {
+			notify = *args.NotifyTelegram
+		}
+		subMgr := subagent.GetManager()
+		runner := func(subCtx context.Context, subPrompt string) (string, error) {
+			return NewStateless().Run(subCtx, subPrompt)
+		}
+		rec := subMgr.Spawn(args.Role, args.Prompt, runner, notify)
+		return fmt.Sprintf("Subagente disparado com sucesso em goroutine Go independente!\n• ID: %s\n• Papel: %s\n• Prompt: %s\nO resultado será arquivado na memória e enviado ao Telegram ao terminar.", rec.ID, rec.Role, rec.Prompt), nil
+
+	case "subagent_list":
+		subMgr := subagent.GetManager()
+		list := subMgr.List()
+		if len(list) == 0 {
+			return "Nenhum subagente registrado ou em execução.", nil
+		}
+		data, _ := json.MarshalIndent(list, "", "  ")
+		return string(data), nil
 
 	case "bash_exec":
 		var args struct {

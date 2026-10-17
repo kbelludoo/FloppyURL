@@ -17,13 +17,16 @@ import (
 
 // Router implements an OpenAI-compatible gateway with token compression and auto-fallback.
 type Router struct {
-	pool *Pool
-	oc   *opencode.Client
+	pool     *Pool
+	oc       *opencode.Client
+	acp      *opencode.ACPClient
+	acpError error
 }
 
 // NewRouter creates and initializes a Router using environment variables.
 func NewRouter() *Router {
 	pool := NewPool()
+	acp, acpErr := opencode.NewACPFromEnv()
 
 	// 1. Apinex Gateway (Modelos 100% Free: Gemini 3.8 Flash, DeepSeek v4.1, GPT-6 Luna)
 	apinexKey := os.Getenv("APINEX_API_KEY")
@@ -191,6 +194,22 @@ func NewRouter() *Router {
 		})
 	}
 
+	// 2.7 NVIDIA Build / NIM API
+	nvidiaKey := os.Getenv("NVIDIA_API_KEY")
+	if nvidiaKey != "" {
+		nvModel := os.Getenv("NVIDIA_MODEL")
+		if nvModel == "" {
+			nvModel = "meta/llama-3.2-11b-vision-instruct"
+		}
+		defaultChain = append(defaultChain, Provider{
+			Name:       "nvidia-build-primary",
+			BaseURL:    "https://integrate.api.nvidia.com/v1",
+			APIKey:     nvidiaKey,
+			DefaultMod: nvModel,
+			Active:     true,
+		})
+	}
+
 	if orKey != "" {
 		defaultChain = append(defaultChain, Provider{
 			Name:       "openrouter-fallback",
@@ -202,6 +221,9 @@ func NewRouter() *Router {
 	}
 
 	pool.RegisterRoute("default", defaultChain)
+	pool.RegisterRoute("nvidia", defaultChain)
+	pool.RegisterRoute("nemotron", defaultChain)
+	pool.RegisterRoute("meta/llama-3.2-11b-vision-instruct", defaultChain)
 	pool.RegisterRoute("gemini", defaultChain)
 	pool.RegisterRoute("gemini-flash", defaultChain)
 	pool.RegisterRoute("free/gemini-3.8-flash", defaultChain)
@@ -232,14 +254,16 @@ func NewRouter() *Router {
 	// Direct bridge to the models configured in the local opencode install.
 	// Uses the same config/auth as the opencode CLI, but without running it.
 	var oc *opencode.Client
-	if client, err := opencode.New(); err == nil {
-		oc = client
-		log.Printf("[RouterGo] opencode direct bridge: %d modelo(s) de %s", len(client.Models()), strings.Join(client.ConfigFiles(), ", "))
-	} else {
-		log.Printf("[RouterGo] opencode direct bridge indisponivel: %v", err)
+	if acp == nil && acpErr == nil {
+		if client, err := opencode.New(); err == nil {
+			oc = client
+			log.Printf("[RouterGo] opencode direct bridge: %d modelo(s) de %s", len(client.Models()), strings.Join(client.ConfigFiles(), ", "))
+		} else {
+			log.Printf("[RouterGo] opencode direct bridge indisponivel: %v", err)
+		}
 	}
 
-	return &Router{pool: pool, oc: oc}
+	return &Router{pool: pool, oc: oc, acp: acp, acpError: acpErr}
 }
 
 // Handler returns the http.Handler for the router subroutes (/v1/chat/completions, /v1/models, /v1/health).
@@ -301,6 +325,9 @@ func (rt *Router) handleModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Models configured in the local opencode install (no server required)
+	if rt.acp != nil {
+		models = append(models, ModelItem{ID: rt.acp.Model, Object: "model", Created: time.Now().Unix(), OwnedBy: "opencode-acp"})
+	}
 	if rt.oc != nil {
 		for _, m := range rt.oc.Models() {
 			models = append(models, ModelItem{
@@ -402,6 +429,15 @@ func (rt *Router) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		rt.handleDeepSeekWeb(w, r, requestedModel, msgs, isStream)
+		return
+	}
+
+	if rt.acpError != nil {
+		writeRouterError(w, http.StatusInternalServerError, rt.acpError)
+		return
+	}
+	if rt.acp != nil && rt.acp.HandlesModel(requestedModel) {
+		rt.handleACP(w, r, requestedModel, reqMap, isStream)
 		return
 	}
 

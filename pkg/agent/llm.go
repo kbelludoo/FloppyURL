@@ -428,16 +428,43 @@ func (c *LLMClient) Complete(ctx context.Context, messages []Message, tools []To
 	}
 
 	var lastErr error
+	attempted := 0
+
 	for i, prov := range c.Providers {
+		// Circuit Breaker check
+		if !defaultCircuitBreaker.IsAvailable(prov.Name) {
+			continue
+		}
+		attempted++
+
 		msg, finishReason, err := c.completeWithProvider(ctx, prov, messages, tools)
 		if err == nil {
+			defaultCircuitBreaker.RecordSuccess(prov.Name)
 			if i > 0 {
 				log.Printf("[llm-fallback] ✅ Resposta atendida com sucesso pelo fallback gratuito: %s (%s)", prov.Name, prov.Model)
 			}
 			return msg, finishReason, nil
 		}
 
+		// Cooldown on rate-limit (429), auth/free block (403), or server failure (5xx)
+		errStr := err.Error()
+		if strings.Contains(errStr, "429") || strings.Contains(errStr, "403") || strings.Contains(errStr, "500") || strings.Contains(errStr, "503") {
+			defaultCircuitBreaker.RecordFailure(prov.Name, 3*time.Minute)
+		}
+
 		log.Printf("[llm-fallback] ⚠️ Falha no provedor %s (%s): %v. Acionando próximo da cadeia...", prov.Name, prov.Model, err)
+		lastErr = err
+	}
+
+	// Se todos estavam em cooldown, tenta resetar e tentar o primeiro
+	if attempted == 0 && len(c.Providers) > 0 {
+		prov := c.Providers[0]
+		log.Printf("[circuit-breaker] Todos os provedores estavam em cooldown. Forçando tentativa com %s...", prov.Name)
+		msg, finishReason, err := c.completeWithProvider(ctx, prov, messages, tools)
+		if err == nil {
+			defaultCircuitBreaker.RecordSuccess(prov.Name)
+			return msg, finishReason, nil
+		}
 		lastErr = err
 	}
 
@@ -606,5 +633,16 @@ func (c *LLMClient) completeWithProvider(ctx context.Context, prov UpstreamProvi
 	}
 
 	choice := chatResp.Choices[0]
+
+	// Hermes Fallback Parser: If no tool_calls were emitted in JSON, but tools were enabled,
+	// inspect choice.Message.Content for XML (<tool_call>) or JSON markdown blocks.
+	if len(activeTools) > 0 && len(choice.Message.ToolCalls) == 0 && strings.TrimSpace(choice.Message.Content) != "" {
+		if fallbackCalls := ParseHermesToolCalls(choice.Message.Content); len(fallbackCalls) > 0 {
+			choice.Message.ToolCalls = fallbackCalls
+			choice.FinishReason = "tool_calls"
+			log.Printf("[hermes-parser] 🔍 %d tool call(s) recuperado(s) com sucesso do texto da resposta!", len(fallbackCalls))
+		}
+	}
+
 	return &choice.Message, choice.FinishReason, nil
 }

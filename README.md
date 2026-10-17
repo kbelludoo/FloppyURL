@@ -52,7 +52,73 @@ As chaves e modelos de IA ficam configurados no arquivo `.env`:
 
 ---
 
-## 🧠 Usar os modelos do OpenCode (sem abrir o OpenCode)
+## 🧠 OpenCode via ACP (CLI oficial)
+
+Selecione `OPENCODE_TRANSPORT=acp` para delegar os turnos ao CLI oficial com
+[`opencode-agent-sdk-go`](https://github.com/ethpandaops/opencode-agent-sdk-go),
+fixado em `v0.0.3`. Requer Go 1.26+ e OpenCode CLI >= 1.14.20. O SDK valida a
+versão e inicia `opencode acp` por stdio JSON-RPC; não exige `opencode serve`
+aberto nem a interface desktop. O CLI gerencia suas credenciais e a sessão.
+
+Faça login pelo próprio CLI:
+
+```powershell
+opencode auth login
+```
+
+Adicione ao `.env`, carregado por `start.bat`:
+
+```dotenv
+OPENCODE_TRANSPORT=acp
+OPENCODE_MODEL=opencode/deepseek-v4.1-flash-free
+OPENCODE_TIMEOUT=2m
+# Opcional, se o CLI não estiver no PATH:
+# OPENCODE_CLI_PATH=C:\caminho\opencode.exe
+# Opcional: diretório de trabalho; padrão = diretório do agent-go:
+# OPENCODE_CWD=C:\meu-projeto
+# Opcional: orçamento observado pelo SDK por turno, em dólares:
+# OPENCODE_MAX_BUDGET_USD=0.05
+```
+
+Ao executar pelo terminal sem `start.bat`, exporte essas variáveis na sessão;
+o executável e o exemplo Go não carregam `.env` automaticamente.
+
+Exemplo de um turno no PowerShell:
+
+```powershell
+$env:OPENCODE_TRANSPORT = "acp"
+$env:OPENCODE_MODEL = "opencode/deepseek-v4.1-flash-free"
+go run ./examples/opencode-acp "Explique canais em Go em uma frase."
+```
+
+No gateway `/v1/chat/completions`, use `model: "default"`, um ID
+`opencode/<modelo>` ou um ID terminado em `-free`. `/v1/models` inclui o modelo
+ACP configurado. A disponibilidade de cada modelo continua sendo decidida
+pelo OpenCode e pelo provedor.
+
+Cada chamada inicia um processo e uma sessão próprios e os encerra ao terminar
+ou cancelar. O histórico completo é enviado como contexto textual com seus
+rótulos de papel; ACP não oferece mensagens de sistema por sessão equivalentes
+às de Chat Completions. `/agent` registra as ferramentas Go nativas através do
+MCP local autenticado do SDK, e o OpenCode conduz o ciclo de ferramentas.
+As regras de permissão existentes do OpenCode são respeitadas; pedidos de
+permissão sem callback são recusados pelo SDK.
+
+O gateway aceita conversas textuais. `stream: true` entrega SSE após o turno
+ser concluído, sem transmissão de tokens em tempo real. Schemas de ferramentas
+OpenAI enviados pelo consumidor (`tools`/`functions`) são recusados; use
+`/agent` para as ferramentas implementadas no servidor. Parâmetros de geração
+como `temperature` e `max_tokens` não são encaminhados por ACP; configure o
+agente e o provedor no OpenCode. O orçamento usa os dados de uso informados
+pelo CLI e não garante um teto exato de cobrança.
+
+Erros ACP são devolvidos ao consumidor, sem fallback automático para outro
+modelo ou conta. A dependência SDK usa licença GPL-3.0 e inclui SQLite e
+OpenTelemetry; esse modo aumenta o tamanho do binário.
+
+### Acesso HTTP direto aos provedores
+
+Sem `OPENCODE_TRANSPORT=acp`, permanece o fluxo HTTP direto abaixo.
 
 O `agent-go` lê o mesmo `opencode.json`/`opencode.jsonc` e `auth.json` que o
 OpenCode usa e chama os provedores **diretamente** — não é preciso `opencode

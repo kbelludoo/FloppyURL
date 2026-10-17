@@ -1,0 +1,17 @@
+[Unit]
+Description=Agent Go Backend Service
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/agent-go
+ExecStart=/home/ubuntu/agent-go/agent-go-linux -serve 8080 -agent -router
+Restart=always
+RestartSec=3
+EnvironmentFile=/home/ubuntu/agent-go/.env
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

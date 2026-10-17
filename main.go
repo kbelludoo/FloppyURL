@@ -21,6 +21,7 @@ import (
 	"github.com/Xelckis/floppyURL/pkg/deepseek"
 	"github.com/Xelckis/floppyURL/pkg/opencode"
 	"github.com/Xelckis/floppyURL/pkg/router"
+	"github.com/Xelckis/floppyURL/pkg/scheduler"
 	"github.com/Xelckis/floppyURL/pkg/server"
 	"github.com/Xelckis/floppyURL/pkg/watchdog"
 	"time"
@@ -388,8 +389,13 @@ func main() {
 
 	if *servePort != "" {
 		var agentH http.Handler
+		var webhookH http.Handler
 		if *enableAgent {
 			agentH = agent.Handler()
+			webhookH = agent.WebhookHandler()
+			scheduler.GetManager().SetRunner(func(ctx context.Context, prompt string) (string, error) {
+				return agent.NewStateless().Run(ctx, prompt)
+			})
 		}
 		var routerH http.Handler
 		if *enableRouter {
@@ -406,7 +412,7 @@ func main() {
 				return res
 			})
 		}
-		if err := server.Start(*servePort, *webDir, agentH, routerH); err != nil {
+		if err := server.Start(*servePort, *webDir, agentH, routerH, webhookH); err != nil {
 			log.Fatalf("Falha no servidor web: %v\n", err)
 		}
 		return

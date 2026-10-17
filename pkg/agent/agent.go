@@ -24,6 +24,12 @@ Hostname: %s
 - skills_list        → discover available modular skills
 - skill_activate     → load a skill on demand, unlocking specialized tools and playbooks
 - skill_deactivate   → deactivate a skill when no longer needed
+- skill_create       → create and persist a new modular skill (SKILL.md) on the fly
+- schedule_reminder  → schedule a one-shot reminder or background task (in seconds) that notifies Telegram
+- schedule_list      → list all active scheduled tasks and reminders
+- schedule_cancel    → cancel a scheduled task by ID
+- subagent_spawn     → launch a detached subagent in an independent Go goroutine to do heavy work, reporting results to Telegram
+- subagent_list      → inspect active and completed subagent executions
 - vps_bots_status    → get real-time health, ports, and RAM for all 9 VPS bots
 - vps_bot_restart    → restart a specific bot service by ID ('huntera', 'tibidle', 'sigma', 'leveling', 'pokeidle', 'pokeidleworld', 'kickminer', 'twitchminer', 'baiak')
 - vps_bot_logs       → get recent logs for any bot to diagnose crashes

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -76,6 +77,50 @@ func (r *SkillRegistry) Activate(id string) (*Skill, error) {
 	}
 	r.active[id] = true
 	return s, nil
+}
+
+// CreateSkill creates a new persistent SKILL.md and registers it immediately.
+func (r *SkillRegistry) CreateSkill(id, name, description, prompt string) (*Skill, error) {
+	cleanID := strings.ToLower(strings.TrimSpace(id))
+	cleanID = regexp.MustCompile(`[^a-z0-9_-]+`).ReplaceAllString(cleanID, "-")
+	if cleanID == "" {
+		return nil, fmt.Errorf("ID de skill inválido")
+	}
+
+	baseDir := "skills"
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		baseDir = filepath.Join(home, ".agent-go", "skills")
+	}
+	skillFolder := filepath.Join(baseDir, cleanID)
+	if err := os.MkdirAll(skillFolder, 0755); err != nil {
+		return nil, fmt.Errorf("erro ao criar diretório da skill: %w", err)
+	}
+
+	content := fmt.Sprintf(`---
+name: %q
+description: %q
+id: %q
+---
+
+%s
+`, name, description, cleanID, strings.TrimSpace(prompt))
+
+	filePath := filepath.Join(skillFolder, "SKILL.md")
+	if err := os.WriteFile(filePath, []byte(content), 0644); err != nil {
+		return nil, fmt.Errorf("erro ao salvar SKILL.md: %w", err)
+	}
+
+	skill := &Skill{
+		ID:          cleanID,
+		Name:        name,
+		Description: description,
+		Prompt:      strings.TrimSpace(prompt),
+		Tools:       []SkillTool{},
+	}
+
+	r.Register(skill)
+	_, _ = r.Activate(cleanID)
+	return skill, nil
 }
 
 func (r *SkillRegistry) Deactivate(id string) {

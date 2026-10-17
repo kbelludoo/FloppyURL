@@ -21,4 +21,9 @@ session/
 # Binários compilados
 agent-go-linux
 floppy-server
+floppy-server-linux
 *.lnk
+inspect_*.py
+scan_*.py
+test_*.py
+

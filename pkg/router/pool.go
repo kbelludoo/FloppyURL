@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,6 +15,18 @@ import (
 	"github.com/Xelckis/floppyURL/pkg/network"
 	"golang.org/x/net/proxy"
 )
+
+var nvidiaHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		ForceAttemptHTTP2:   true,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableKeepAlives:   false,
+	},
+	Timeout: 90 * time.Second,
+}
 
 // Provider represents a single LLM upstream backend (e.g., NVIDIA NIM, Groq, OpenRouter).
 type Provider struct {
@@ -153,7 +166,9 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 
 		// Automatic IP Egress rotation: Bind to dedicated LocalIP if set, else alternate SP1/SP2
 		clientToUse := p.client
-		if prov.LocalIP != nil {
+		if strings.Contains(prov.BaseURL, "integrate.api.nvidia.com") {
+			clientToUse = nvidiaHTTPClient
+		} else if prov.LocalIP != nil {
 			clientToUse = &http.Client{
 				Transport: &http.Transport{
 					DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {

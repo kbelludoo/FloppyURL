@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Xelckis/floppyURL/pkg/network"
 	"golang.org/x/net/proxy"
 )
 
@@ -43,9 +44,7 @@ type Pool struct {
 
 // NewPool initializes a routing pool with direct client and optional SP2 tunnel client.
 func NewPool() *Pool {
-	directClient := &http.Client{
-		Timeout: 120 * time.Second,
-	}
+	directClient := network.NewRotatingHTTPClient(120 * time.Second)
 
 	var sp2Client *http.Client
 	// Setup SOCKS5 dialer for SP2 if tunnel is available on 127.0.0.1:1080

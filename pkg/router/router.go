@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/Xelckis/floppyURL/pkg/network"
 )
 
 // Router implements an OpenAI-compatible gateway with token compression and auto-fallback.
@@ -139,8 +141,19 @@ func (rt *Router) Handler() http.Handler {
 	mux.HandleFunc("/v1/chat/completions", rt.handleChatCompletions)
 	mux.HandleFunc("/v1/models", rt.handleModels)
 	mux.HandleFunc("/v1/health", rt.handleHealth)
+	mux.HandleFunc("/v1/test-ip-rotation", rt.handleTestIPRotation)
 
 	return mux
+}
+
+func (rt *Router) handleTestIPRotation(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+	results := network.TestRotation(6)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"results": results,
+	})
 }
 
 func (rt *Router) handleHealth(w http.ResponseWriter, r *http.Request) {

@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/Xelckis/floppyURL/pkg/network"
 )
 
 type Message struct {
@@ -161,10 +163,8 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 	}
 
 	return &LLMClient{
-		Providers: providers,
-		HTTPClient: &http.Client{
-			Timeout: 120 * time.Second,
-		},
+		Providers:  providers,
+		HTTPClient: network.NewRotatingHTTPClient(120 * time.Second),
 	}
 }
 

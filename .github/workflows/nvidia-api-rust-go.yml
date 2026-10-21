@@ -1,0 +1,66 @@
+name: NVIDIA API Rust versus Go smoke
+on:
+  push:
+    branches:
+      - rust-agent-core-benchmark-20261021
+    paths:
+      - "experiments/rust-agent-core/nvidia-real/**"
+      - ".github/workflows/nvidia-api-rust-go.yml"
+  pull_request:
+    paths:
+      - "experiments/rust-agent-core/nvidia-real/**"
+      - ".github/workflows/nvidia-api-rust-go.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: Go unit tests
+        run: go test ./experiments/rust-agent-core/nvidia-real/go
+      - name: Rust unit tests
+        working-directory: experiments/rust-agent-core/nvidia-real/rust
+        run: cargo test
+      - name: Build optimized binaries
+        run: |
+          set -euo pipefail
+          go build -o /tmp/nvidia-agent-go ./experiments/rust-agent-core/nvidia-real/go
+          cargo build --release --manifest-path experiments/rust-agent-core/nvidia-real/rust/Cargo.toml
+          cp experiments/rust-agent-core/nvidia-real/rust/target/release/floppy-nvidia-smoke /tmp/nvidia-agent-rust
+          ls -lh /tmp/nvidia-agent-go /tmp/nvidia-agent-rust
+      - name: Check both clients on a local simulated API (no credential)
+        run: |
+          set -euo pipefail
+          python3 experiments/rust-agent-core/nvidia-real/mock_server.py >/dev/null 2>&1 &
+          MOCK_PID=$!
+          trap 'kill "$MOCK_PID" 2>/dev/null || true' EXIT
+          sleep 1
+          export NVIDIA_API_KEY=local-mock-key
+          export NVIDIA_CHAT_URL=http://127.0.0.1:18765/v1/chat/completions
+          echo "=== LOCAL MOCK GO ==="
+          /usr/bin/time -f 'GO_LOCAL_SECONDS=%e GO_LOCAL_MAX_RSS_KB=%M' /tmp/nvidia-agent-go
+          echo "=== LOCAL MOCK RUST ==="
+          /usr/bin/time -f 'RUST_LOCAL_SECONDS=%e RUST_LOCAL_MAX_RSS_KB=%M' /tmp/nvidia-agent-rust
+      - name: Optional calls to actual NVIDIA NIM API
+        if: github.event_name == 'push'
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          NVIDIA_MODEL: ${{ vars.NVIDIA_MODEL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$NVIDIA_API_KEY" ]; then
+            echo "REAL_NVIDIA_API_STATUS=skipped_missing_github_secret"
+            exit 0
+          fi
+          echo "REAL_NVIDIA_API_STATUS=attempting"
+          echo "=== REAL NVIDIA GO ==="
+          /usr/bin/time -f 'GO_REAL_SECONDS=%e GO_REAL_MAX_RSS_KB=%M' /tmp/nvidia-agent-go
+          echo "=== REAL NVIDIA RUST ==="
+          /usr/bin/time -f 'RUST_REAL_SECONDS=%e RUST_REAL_MAX_RSS_KB=%M' /tmp/nvidia-agent-rust
+          echo "REAL_NVIDIA_API_STATUS=success"

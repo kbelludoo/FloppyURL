@@ -1,0 +1,54 @@
+name: Agent core Go versus Rust (isolated experiment)
+on:
+  push:
+    branches:
+      - rust-agent-core-benchmark-20261021
+  pull_request:
+    paths:
+      - "experiments/rust-agent-core/**"
+      - ".github/workflows/agent-core-rust-benchmark.yml"
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: Toolchain versions
+        run: |
+          go version
+          rustc --version
+      - name: Go tests for the isolated orchestration loop
+        run: go test ./experiments/rust-agent-core/go
+      - name: Rust tests for the same loop
+        run: |
+          rustc --edition=2021 --test -C opt-level=0 experiments/rust-agent-core/rust/main.rs -o /tmp/rust-agent-tests
+          /tmp/rust-agent-tests
+      - name: Build both optimized binaries
+        run: |
+          go build -o /tmp/go-agent-core ./experiments/rust-agent-core/go
+          rustc --edition=2021 -C opt-level=3 -C lto=thin experiments/rust-agent-core/rust/main.rs -o /tmp/rust-agent-core
+          ls -lh /tmp/go-agent-core /tmp/rust-agent-core
+      - name: Compare 250k identical simulated agent turns
+        run: |
+          set -euo pipefail
+          for round in 1 2 3; do
+            echo "=== RUN $round GO ==="
+            /usr/bin/time -f 'GO_SECONDS=%e GO_MAX_RSS_KB=%M GO_CPU_PERCENT=%P' /tmp/go-agent-core 250000
+            echo "=== RUN $round RUST ==="
+            /usr/bin/time -f 'RUST_SECONDS=%e RUST_MAX_RSS_KB=%M RUST_CPU_PERCENT=%P' /tmp/rust-agent-core 250000
+          done
+      - name: Compare on one CPU core (1m agent turns, 3 repeats)
+        run: |
+          set -euo pipefail
+          CPU="$(awk '/^Cpus_allowed_list:/ {split($2, parts, /[,-]/); print parts[1]}' /proc/self/status)"
+          echo "PINNED_CPU=$CPU"
+          test -n "$CPU"
+          for round in 1 2 3; do
+            echo "=== SINGLE_CPU RUN $round GO ==="
+            /usr/bin/time -f 'GO_1CPU_SECONDS=%e GO_1CPU_MAX_RSS_KB=%M GO_1CPU_CPU_PERCENT=%P' taskset -c "$CPU" env GOMAXPROCS=1 /tmp/go-agent-core 1000000
+            echo "=== SINGLE_CPU RUN $round RUST ==="
+            /usr/bin/time -f 'RUST_1CPU_SECONDS=%e RUST_1CPU_MAX_RSS_KB=%M RUST_1CPU_CPU_PERCENT=%P' taskset -c "$CPU" /tmp/rust-agent-core 1000000
+          done

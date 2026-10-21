@@ -40,3 +40,15 @@ jobs:
             echo "=== RUN $round RUST ==="
             /usr/bin/time -f 'RUST_SECONDS=%e RUST_MAX_RSS_KB=%M RUST_CPU_PERCENT=%P' /tmp/rust-agent-core 250000
           done
+      - name: Compare on one CPU core (1m agent turns, 3 repeats)
+        run: |
+          set -euo pipefail
+          CPU="$(awk '/^Cpus_allowed_list:/ {split($2, parts, /[,-]/); print parts[1]}' /proc/self/status)"
+          echo "PINNED_CPU=$CPU"
+          test -n "$CPU"
+          for round in 1 2 3; do
+            echo "=== SINGLE_CPU RUN $round GO ==="
+            /usr/bin/time -f 'GO_1CPU_SECONDS=%e GO_1CPU_MAX_RSS_KB=%M GO_1CPU_CPU_PERCENT=%P' taskset -c "$CPU" env GOMAXPROCS=1 /tmp/go-agent-core 1000000
+            echo "=== SINGLE_CPU RUN $round RUST ==="
+            /usr/bin/time -f 'RUST_1CPU_SECONDS=%e RUST_1CPU_MAX_RSS_KB=%M RUST_1CPU_CPU_PERCENT=%P' taskset -c "$CPU" /tmp/rust-agent-core 1000000
+          done

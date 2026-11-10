@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/flate"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -16,9 +17,14 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/Xelckis/floppyURL/pkg/agent"
-	"github.com/Xelckis/floppyURL/pkg/router"
-	"github.com/Xelckis/floppyURL/pkg/server"
+	"github.com/kbelludoo/FloppyURL/pkg/agent"
+	"github.com/kbelludoo/FloppyURL/pkg/deepseek"
+	"github.com/kbelludoo/FloppyURL/pkg/opencode"
+	"github.com/kbelludoo/FloppyURL/pkg/router"
+	"github.com/kbelludoo/FloppyURL/pkg/scheduler"
+	"github.com/kbelludoo/FloppyURL/pkg/server"
+	"github.com/kbelludoo/FloppyURL/pkg/watchdog"
+	"time"
 	"github.com/andybalholm/brotli"
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/css"
@@ -112,7 +118,6 @@ func sha256Hex(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
-
 
 type PackOptions struct {
 	InputFile string
@@ -331,24 +336,87 @@ func main() {
 	webDir := flag.String("web-dir", "Website", "Diretorio contendo os arquivos web estaticos")
 	enableAgent := flag.Bool("agent", false, "Habilitar endpoint /agent (requer LLM_API_KEY no ambiente)")
 	enableRouter := flag.Bool("router", false, "Habilitar OpenAI API Gateway /v1/chat/completions com RTK e auto-fallback")
+	enableWatchdog := flag.Bool("watchdog", true, "Habilitar watchdog autonomo para vigiar e auto-curar bots da VPS (default: true)")
+	deepseekLogin := flag.Bool("deepseek-login", false, "Captura a sessao do DeepSeek Web (gratis, sem API key) de um Chrome com --remote-debugging-port=9222")
+	deepseekChat := flag.Bool("deepseek-chat", false, "Inicia chat interativo no terminal via DeepSeek Web (gratis, sem API key)")
+	deepseekCDP := flag.String("deepseek-cdp", "", "Endpoint CDP do Chrome (ex: http://127.0.0.1:9222). Padrao: DEEPSEEK_CDP_URL ou http://127.0.0.1:9222")
+	opencodeModels := flag.Bool("opencode-models", false, "Lista os modelos configurados no opencode local (mesmo opencode.json/auth.json, sem abrir o opencode)")
 	flag.Parse()
+
+	if *deepseekCDP != "" {
+		_ = os.Setenv("DEEPSEEK_CDP_URL", *deepseekCDP)
+	}
+
+	if *opencodeModels {
+		oc, err := opencode.New()
+		if err != nil {
+			log.Fatalf("opencode: %v\n", err)
+		}
+		fmt.Printf("config: %v\n", oc.ConfigFiles())
+		fmt.Printf("default: %s\n", oc.DefaultModel())
+		for _, m := range oc.Models() {
+			fmt.Printf("  %-40s %s\n", m.ID, m.Name)
+		}
+		return
+	}
+
+	if *deepseekLogin {
+		ctx := context.Background()
+		sess, err := deepseek.CaptureFromCDP(ctx, deepseek.CDPURL())
+		if err != nil {
+			log.Fatalf("Falha ao capturar sessao DeepSeek: %v\n", err)
+		}
+		if err := deepseek.ProbeToken(ctx, sess); err != nil {
+			log.Fatalf("Token DeepSeek rejeitado: %v\n", err)
+		}
+		if err := sess.Save(deepseek.DefaultSessionFile()); err != nil {
+			log.Fatalf("Falha ao salvar sessao: %v\n", err)
+		}
+		token := sess.Token
+		if len(token) > 10 {
+			token = token[:10]
+		}
+		fmt.Printf("[deepseek] Sessao salva em %s (token %s..., %d cookies)\n", deepseek.DefaultSessionFile(), token, len(sess.Cookies))
+		return
+	}
+
+	if *deepseekChat {
+		if err := deepseek.RunTerminalChat(context.Background()); err != nil {
+			log.Fatalf("Chat DeepSeek: %v\n", err)
+		}
+		return
+	}
 
 	if *servePort != "" {
 		var agentH http.Handler
+		var webhookH http.Handler
 		if *enableAgent {
 			agentH = agent.Handler()
+			webhookH = agent.WebhookHandler()
+			scheduler.GetManager().SetRunner(func(ctx context.Context, prompt string) (string, error) {
+				return agent.NewStateless().Run(ctx, prompt)
+			})
 		}
 		var routerH http.Handler
 		if *enableRouter {
 			r := router.NewRouter()
 			routerH = r.Handler()
 		}
-		if err := server.Start(*servePort, *webDir, agentH, routerH); err != nil {
+		if *enableWatchdog {
+			watchdog.StartBackgroundWatchdog(context.Background(), 45*time.Second, func(ctx context.Context, bot watchdog.MonitoredBot, logs string) string {
+				prompt := fmt.Sprintf("O bot %s na porta %d caiu e o comando de reinicio rapido (%s) falhou. Analise os ultimos logs e forneca um diagnostico conciso de 2 a 3 frases explicando por que ele nao subiu e a correcao necessaria:\n\nLogs:\n%s", bot.Name, bot.Port, bot.RestartCmd, logs)
+				res, err := agent.NewStateless().Run(ctx, prompt)
+				if err != nil {
+					return fmt.Sprintf("Erro ao acionar IA do Agent Go: %v", err)
+				}
+				return res
+			})
+		}
+		if err := server.Start(*servePort, *webDir, agentH, routerH, webhookH); err != nil {
 			log.Fatalf("Falha no servidor web: %v\n", err)
 		}
 		return
 	}
-
 
 	if *inputFile == "" {
 		log.Fatal("Uso:\n  Empacotar: go run . -file <arquivo.html|arquivo.lin> [-algo deflate|brotli]\n  Servidor:  go run . -serve 8080")

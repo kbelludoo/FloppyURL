@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Xelckis/floppyURL/mempipe"
+	"github.com/kbelludoo/FloppyURL/mempipe"
 )
 
 func main() {

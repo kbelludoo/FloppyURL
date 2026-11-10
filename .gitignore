@@ -9,3 +9,26 @@ floppy-pack
 *.exe
 __pycache__/
 *.pyc
+
+# Sessao DeepSeek Web (contem token + cookies)
+session/
+
+# Secrets & Environment variables
+.env
+.secrets.json
+kaggle.json
+.scratch/
+
+# Binários compilados
+agent-go-linux
+floppy-server
+floppy-server-linux
+benchmark_brain_linux
+*.bin
+*.lnk
+kaggle/real_multigame_extracted.json
+inspect_*.py
+scan_*.py
+test_*.py
+
+

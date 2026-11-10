@@ -16,9 +16,9 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/Xelckis/floppyURL/lint"
-	"github.com/Xelckis/floppyURL/linp"
-	"github.com/Xelckis/floppyURL/linz"
+	"github.com/kbelludoo/FloppyURL/lint"
+	"github.com/kbelludoo/FloppyURL/linp"
+	"github.com/kbelludoo/FloppyURL/linz"
 	"github.com/tdewolff/minify/v2"
 	"github.com/tdewolff/minify/v2/css"
 	"github.com/tdewolff/minify/v2/html"

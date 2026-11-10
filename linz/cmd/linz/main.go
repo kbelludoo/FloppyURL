@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Xelckis/floppyURL/linz"
+	"github.com/kbelludoo/FloppyURL/linz"
 )
 
 func main() {

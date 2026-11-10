@@ -8,7 +8,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/Xelckis/floppyURL/linp"
+	"github.com/kbelludoo/FloppyURL/linp"
 )
 
 func main() {

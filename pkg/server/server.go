@@ -21,6 +21,7 @@ import (
 
 	"github.com/tdewolff/minify/v2"
 	minifyHtml "github.com/tdewolff/minify/v2/html"
+	"github.com/kbelludoo/FloppyURL/pkg/watchdog"
 )
 
 
@@ -363,15 +364,36 @@ func PackURL(targetURL, _ string) (*PackResponse, error) {
 }
 
 // NewHandler creates an http.Handler that routes APIs, agent, router gateway, and serves webDir on root.
-// agentH and routerH may be nil.
-func NewHandler(webDir string, agentH http.Handler, routerH http.Handler) http.Handler {
+// agentH, routerH, and webhookH may be nil.
+func NewHandler(webDir string, agentH http.Handler, routerH http.Handler, webhookH ...http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", HealthHandler)
 	mux.HandleFunc("/search", SearchHandler)
 	mux.HandleFunc("/pack", PackHandler)
+	mux.HandleFunc("/api/vps/bots", func(w http.ResponseWriter, r *http.Request) {
+		EnableCORS(w)
+		w.Header().Set("Content-Type", "application/json")
+		report := watchdog.GetFleetStatus()
+		_ = json.NewEncoder(w).Encode(report)
+	})
+	mux.HandleFunc("/api/vps/restart", func(w http.ResponseWriter, r *http.Request) {
+		EnableCORS(w)
+		w.Header().Set("Content-Type", "application/json")
+		botID := r.URL.Query().Get("bot")
+		if botID == "" {
+			http.Error(w, `{"error":"parâmetro 'bot' obrigatório (ex: ?bot=sigma)"}`, http.StatusBadRequest)
+			return
+		}
+		ok, msg := watchdog.RestartBot(botID)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "message": msg})
+	})
 
 	if agentH != nil {
 		mux.Handle("/agent", agentH)
+	}
+
+	if len(webhookH) > 0 && webhookH[0] != nil {
+		mux.Handle("/webhook", webhookH[0])
 	}
 
 	if routerH != nil {
@@ -391,13 +413,13 @@ func NewHandler(webDir string, agentH http.Handler, routerH http.Handler) http.H
 	return mux
 }
 
-// Start runs the server on given addr and serves webDir. agentH and routerH may be nil.
-func Start(addr, webDir string, agentH http.Handler, routerH http.Handler) error {
+// Start runs the server on given addr and serves webDir. agentH, routerH, and webhookH may be nil.
+func Start(addr, webDir string, agentH http.Handler, routerH http.Handler, webhookH ...http.Handler) error {
 	if !strings.Contains(addr, ":") {
 		addr = ":" + addr
 	}
 	initMinifier()
-	handler := NewHandler(webDir, agentH, routerH)
+	handler := NewHandler(webDir, agentH, routerH, webhookH...)
 	agentStatus := "disabled"
 	if agentH != nil {
 		agentStatus = "enabled"
@@ -406,7 +428,11 @@ func Start(addr, webDir string, agentH http.Handler, routerH http.Handler) error
 	if routerH != nil {
 		routerStatus = "enabled (/v1)"
 	}
-	log.Printf("🚀 PocketWeb & FloppyURL Server online em http://localhost%s (pasta: %s, agent: %s, router: %s)...\n", addr, webDir, agentStatus, routerStatus)
+	webhookStatus := "disabled"
+	if len(webhookH) > 0 && webhookH[0] != nil {
+		webhookStatus = "enabled (/webhook)"
+	}
+	log.Printf("🚀 PocketWeb & FloppyURL Server online em http://localhost%s (pasta: %s, agent: %s, router: %s, webhook: %s)...\n", addr, webDir, agentStatus, routerStatus, webhookStatus)
 	return http.ListenAndServe(addr, handler)
 }
 

@@ -7,14 +7,26 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/kbelludoo/FloppyURL/pkg/network"
 	"golang.org/x/net/proxy"
 )
 
-
+var nvidiaHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		ForceAttemptHTTP2:   true,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		DisableKeepAlives:   false,
+	},
+	Timeout: 90 * time.Second,
+}
 
 // Provider represents a single LLM upstream backend (e.g., NVIDIA NIM, Groq, OpenRouter).
 type Provider struct {
@@ -23,6 +35,7 @@ type Provider struct {
 	APIKey     string
 	DefaultMod string
 	Active     bool
+	LocalIP    net.IP
 	// Circuit breaker metrics
 	failCount  int64
 	lastFailed time.Time
@@ -45,9 +58,7 @@ type Pool struct {
 
 // NewPool initializes a routing pool with direct client and optional SP2 tunnel client.
 func NewPool() *Pool {
-	directClient := &http.Client{
-		Timeout: 120 * time.Second,
-	}
+	directClient := network.NewRotatingHTTPClient(120 * time.Second)
 
 	var sp2Client *http.Client
 	// Setup SOCKS5 dialer for SP2 if tunnel is available on 127.0.0.1:1080
@@ -68,7 +79,6 @@ func NewPool() *Pool {
 		sp2Client: sp2Client,
 	}
 }
-
 
 // RegisterRoute adds or updates a route with fallbacks.
 func (p *Pool) RegisterRoute(alias string, providers []Provider) {
@@ -98,33 +108,29 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 		// Map model alias to upstream provider model ID
 		targetModel := modelAlias
 		switch modelAlias {
-		case "default", "kimi", "":
-			targetModel = "moonshotai/kimi-k3"
-		case "kimi-k3", "codecraft/kimi-k3":
-			targetModel = "kimi-k3"
-		case "claude-fable-5", "codecraft/claude-fable-5":
-			targetModel = "claude-fable-5"
-		case "claude-fable-5.1", "codecraft/claude-fable-5.1":
-			targetModel = "claude-fable-5.1"
+
+		case "default", "":
+			targetModel = "free/gemini-3.8-flash"
+		case "gemini", "gemini-flash", "gemini-3.8-flash":
+			targetModel = "free/gemini-3.8-flash"
+		case "deepseek", "deepseek-flash", "deepseek-v4.1":
+			targetModel = "deepseek-v4.1-flash:free"
+		case "deepseek-v4":
+			targetModel = "deepseek-v4-flash:free"
+		case "luna", "gpt-6-luna":
+			targetModel = "free/gpt-6-luna"
+
 		case "kilo", "kilo-free", "kilo-auto/free":
 			targetModel = "kilo-auto/free"
-		case "stepfun", "step":
-			targetModel = "stepfun/step-5-preview-free"
-		case "nemotron-ultra", "nemotron-550b":
-			targetModel = "nvidia/nemotron-3-ultra-550b-a55b:free"
-		case "nemotron-lightning":
-			targetModel = "nvidia/nemotron-3.5-lightning:free"
-		case "dots":
-			targetModel = "dots-studio/dots-3-note-preview:free"
-		case "nemotron":
-			targetModel = "nvidia/llama-3.1-nemotron-70b-instruct"
-		case "deepseek":
-			targetModel = "deepseek-ai/deepseek-v4.1-flash"
-		case "llama":
-			targetModel = "meta/llama-3.1-8b-instruct"
+		case "mistral", "codestral", "codestral-latest":
+			targetModel = "codestral-latest"
+		case "claude", "claude-sonnet", "claude-sonnet-5":
+			targetModel = "claude-sonnet-5"
+		case "claude-opus", "claude-opus-5.5":
+			targetModel = "claude-opus-5.5"
+		case "llama", "llama-3.3":
+			targetModel = "llama-3.3-70b-versatile"
 		}
-
-
 
 		// If this is a fallback provider (i > 0) and the primary model failed, use provider's DefaultMod
 		if i > 0 && prov.DefaultMod != "" {
@@ -160,9 +166,26 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 		httpReq.Header.Set("Authorization", "Bearer "+prov.APIKey)
 		httpReq.Header.Set("User-Agent", "RouterGo/1.0 (FloppyURL-Omni)")
 
-		// Automatic IP Egress rotation: Alternate between SP1 (direct) and SP2 (tunnel)
+		// Automatic IP Egress rotation: Bind to dedicated LocalIP if set, else alternate SP1/SP2
 		clientToUse := p.client
-		if p.sp2Client != nil && atomic.AddUint64(&p.rrCounter, 1)%2 == 1 {
+		if strings.Contains(prov.BaseURL, "integrate.api.nvidia.com") {
+			clientToUse = nvidiaHTTPClient
+		} else if prov.LocalIP != nil {
+			clientToUse = &http.Client{
+				Transport: &http.Transport{
+					DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+						dialer := &net.Dialer{
+							Timeout:   15 * time.Second,
+							KeepAlive: 30 * time.Second,
+							LocalAddr: &net.TCPAddr{IP: prov.LocalIP},
+						}
+						return dialer.DialContext(ctx, network, addr)
+					},
+					DisableKeepAlives: true,
+				},
+				Timeout: 30 * time.Second,
+			}
+		} else if p.sp2Client != nil && atomic.AddUint64(&p.rrCounter, 1)%2 == 1 {
 			clientToUse = p.sp2Client
 		}
 
@@ -174,7 +197,6 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 			continue
 		}
 
-
 		// Check for error status codes (4xx client error / expired model, 5xx server error, 429 rate limit) -> Trigger Fallback!
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			atomic.AddInt64(&prov.failCount, 1)
@@ -185,7 +207,6 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 			continue
 		}
 
-
 		// Success! Note: provCancel is not called here so the response body can be streamed
 		_ = provCancel
 		return resp, prov, nil
@@ -193,7 +214,6 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 
 	return nil, nil, fmt.Errorf("all providers failed in fallback chain. Last error: %w", lastErr)
 }
-
 
 func bytesNewReader(b []byte) io.Reader {
 	return &byteReader{b: b, i: 0}

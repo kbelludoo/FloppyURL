@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -143,6 +144,43 @@ func SearchHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(results)
 }
 
+// FindRustCoreBinary searches for the floppy-core high-performance Rust engine.
+func FindRustCoreBinary() string {
+	candidates := []string{
+		"floppy-core",
+		"./floppy-core/target/release/floppy-core.exe",
+		"./floppy-core/target/release/floppy-core",
+		"../floppy-core/target/release/floppy-core.exe",
+		"../floppy-core/target/release/floppy-core",
+		"/usr/local/bin/floppy-core",
+	}
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && !fi.IsDir() {
+			return c
+		}
+	}
+	return ""
+}
+
+// TryHybridRustPack delegates minification and Deflate packaging to the Rust engine if present.
+func TryHybridRustPack(rawHTML, targetURL string) (*PackResponse, bool) {
+	rustBin := FindRustCoreBinary()
+	if rustBin == "" {
+		return nil, false
+	}
+	cmd := exec.Command(rustBin, "pack", "--url", targetURL)
+	cmd.Stdin = strings.NewReader(rawHTML)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, false
+	}
+	var res PackResponse
+	if err := json.Unmarshal(out, &res); err != nil {
+		return nil, false
+	}
+	return &res, true
+}
+
 func PackHandler(w http.ResponseWriter, r *http.Request) {
 	EnableCORS(w)
 	if r.Method == http.MethodOptions {
@@ -184,6 +222,13 @@ func PackHandler(w http.ResponseWriter, r *http.Request) {
 	rawHTML, err := io.ReadAll(resp.Body)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"falha ao ler HTML: %v"}`, err), http.StatusInternalServerError)
+		return
+	}
+
+	// ⚡ Hybrid Rust Engine acceleration (sub-millisecond SIMD minify-html + Deflate)
+	if hybridRes, ok := TryHybridRustPack(string(rawHTML), targetURL); ok {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(hybridRes)
 		return
 	}
 
@@ -263,6 +308,11 @@ func PackURL(targetURL, _ string) (*PackResponse, error) {
 	rawHTML, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// ⚡ Hybrid Rust Engine acceleration (sub-millisecond SIMD minify-html + Deflate)
+	if hybridRes, ok := TryHybridRustPack(string(rawHTML), targetURL); ok {
+		return hybridRes, nil
 	}
 
 	htmlStr := string(rawHTML)

@@ -52,11 +52,22 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 	if baseURL == "" {
 		baseURL = os.Getenv("LLM_BASE_URL")
 		if baseURL == "" {
-			baseURL = "https://openrouter.ai/api/v1"
+			baseURL = os.Getenv("CODECRAFT_BASE_URL")
+		}
+		if baseURL == "" {
+			// Se CODECRAFT_API_KEY estiver setada, assume CodeCraft por padrão
+			if os.Getenv("CODECRAFT_API_KEY") != "" {
+				baseURL = "https://codecraftapi.com/v1"
+			} else {
+				baseURL = "https://openrouter.ai/api/v1"
+			}
 		}
 	}
 	if apiKey == "" {
 		apiKey = os.Getenv("LLM_API_KEY")
+		if apiKey == "" {
+			apiKey = os.Getenv("CODECRAFT_API_KEY")
+		}
 		if apiKey == "" {
 			apiKey = os.Getenv("OPENROUTER_API_KEY")
 		}
@@ -67,7 +78,15 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 	if model == "" {
 		model = os.Getenv("LLM_MODEL")
 		if model == "" {
-			model = "nousresearch/hermes-3-llama-3.1-8b"
+			model = os.Getenv("CODECRAFT_MODEL")
+		}
+		if model == "" {
+			// Padrão CodeCraft: claude-fable-5 (fallback kimi-k3)
+			if os.Getenv("CODECRAFT_API_KEY") != "" {
+				model = "claude-fable-5"
+			} else {
+				model = "nousresearch/hermes-3-llama-3.1-8b"
+			}
 		}
 	}
 
@@ -83,7 +102,7 @@ func NewLLMClient(baseURL, apiKey, model string) *LLMClient {
 
 func (c *LLMClient) Complete(ctx context.Context, messages []Message, tools []ToolDef) (*Message, string, error) {
 	if c.APIKey == "" {
-		return nil, "", fmt.Errorf("API key is not configured. Set LLM_API_KEY, OPENROUTER_API_KEY, or pass -llm-key")
+		return nil, "", fmt.Errorf("API key is not configured. Set LLM_API_KEY, CODECRAFT_API_KEY, OPENROUTER_API_KEY, or pass -llm-key")
 	}
 
 	reqBody := ChatRequest{

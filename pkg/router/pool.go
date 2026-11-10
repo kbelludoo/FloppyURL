@@ -100,6 +100,12 @@ func (p *Pool) ForwardWithFallback(ctx context.Context, modelAlias string, reqMa
 		switch modelAlias {
 		case "default", "kimi", "":
 			targetModel = "moonshotai/kimi-k3"
+		case "kimi-k3", "codecraft/kimi-k3":
+			targetModel = "kimi-k3"
+		case "claude-fable-5", "codecraft/claude-fable-5":
+			targetModel = "claude-fable-5"
+		case "claude-fable-5.1", "codecraft/claude-fable-5.1":
+			targetModel = "claude-fable-5.1"
 		case "kilo", "kilo-free", "kilo-auto/free":
 			targetModel = "kilo-auto/free"
 		case "stepfun", "step":

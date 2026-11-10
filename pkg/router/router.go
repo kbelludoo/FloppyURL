@@ -42,8 +42,31 @@ func NewRouter() *Router {
 	orKey := os.Getenv("OPENROUTER_API_KEY")
 	orBase := "https://openrouter.ai/api/v1"
 
+	// 5. CodeCraft (OpenAI-compatible, ex: kimi-k3, claude-fable-5)
+	ccKey := os.Getenv("CODECRAFT_API_KEY")
+	if ccKey == "" {
+		ccKey = os.Getenv("LLM_API_KEY")
+	}
+	ccBase := os.Getenv("CODECRAFT_BASE_URL")
+	if ccBase == "" {
+		ccBase = os.Getenv("LLM_BASE_URL")
+	}
+	if ccBase == "" {
+		ccBase = "https://codecraftapi.com/v1"
+	}
+
 	// Setup primary provider chain
 	var defaultChain []Provider
+
+	if ccKey != "" {
+		defaultChain = append(defaultChain, Provider{
+			Name:       "codecraft-fable",
+			BaseURL:    ccBase,
+			APIKey:     ccKey,
+			DefaultMod: "claude-fable-5",
+			Active:     true,
+		})
+	}
 
 	if nvKey != "" {
 		defaultChain = append(defaultChain, Provider{
@@ -88,6 +111,12 @@ func NewRouter() *Router {
 	pool.RegisterRoute("default", defaultChain)
 	pool.RegisterRoute("moonshotai/kimi-k3", defaultChain)
 	pool.RegisterRoute("kimi", defaultChain)
+	pool.RegisterRoute("kimi-k3", defaultChain)
+	pool.RegisterRoute("codecraft/kimi-k3", defaultChain)
+	pool.RegisterRoute("codecraft/claude-fable-5", defaultChain)
+	pool.RegisterRoute("codecraft/claude-fable-5.1", defaultChain)
+	pool.RegisterRoute("claude-fable-5", defaultChain)
+	pool.RegisterRoute("claude-fable-5.1", defaultChain)
 	pool.RegisterRoute("kilo", defaultChain)
 	pool.RegisterRoute("kilo-auto/free", defaultChain)
 	pool.RegisterRoute("stepfun/step-5-preview-free", defaultChain)
@@ -126,6 +155,11 @@ func (rt *Router) handleModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	models := []ModelItem{
+		{ID: "codecraft/claude-fable-5", Object: "model", Created: time.Now().Unix(), OwnedBy: "codecraft"},
+		{ID: "codecraft/claude-fable-5.1", Object: "model", Created: time.Now().Unix(), OwnedBy: "codecraft"},
+		{ID: "codecraft/kimi-k3", Object: "model", Created: time.Now().Unix(), OwnedBy: "codecraft"},
+		{ID: "claude-fable-5", Object: "model", Created: time.Now().Unix(), OwnedBy: "codecraft"},
+		{ID: "kimi-k3", Object: "model", Created: time.Now().Unix(), OwnedBy: "codecraft"},
 		{ID: "moonshotai/kimi-k3", Object: "model", Created: time.Now().Unix(), OwnedBy: "nvidia-nim"},
 		{ID: "meta/llama-3.3-70b-instruct", Object: "model", Created: time.Now().Unix(), OwnedBy: "nvidia-nim"},
 		{ID: "meta/llama-3.1-8b-instruct", Object: "model", Created: time.Now().Unix(), OwnedBy: "nvidia-nim"},
@@ -213,8 +247,9 @@ func (rt *Router) handleChatCompletions(w http.ResponseWriter, r *http.Request) 
 		log.Printf("[RouterGo RTK] Saved %d bytes (%.1f%% token reduction)", origSize-optSize, float64(origSize-optSize)/float64(origSize)*100.0)
 	}
 
-	// 2. If model is an OpenCode native model (e.g. mimo, opencode/mimo-v2.6-flash-free), route via OpenCodeBridge!
-	if strings.HasPrefix(requestedModel, "opencode/") || strings.Contains(requestedModel, "mimo") {
+	// 2. If model is an OpenCode native model (e.g. mimo, opencode/mimo-v2.6-flash-free,
+	// codecraft/claude-fable-5), route via OpenCodeBridge with fallback to pool!
+	if strings.HasPrefix(requestedModel, "opencode/") || strings.HasPrefix(requestedModel, "codecraft/") || strings.Contains(requestedModel, "mimo") || strings.Contains(requestedModel, "fable") {
 		var msgs []map[string]interface{}
 		if rawMsgs, ok := reqMap["messages"].([]interface{}); ok {
 			for _, m := range rawMsgs {
